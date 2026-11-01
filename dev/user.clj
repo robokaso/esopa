@@ -3,9 +3,18 @@
 
 (defonce system nil)
 
+(defn- dev-env
+  "The environment, with random keys when none are set (so restarting the REPL
+  logs you out) and a session cookie that also works over plain HTTP."
+  []
+  (merge {"SESSION_KEY"   (system/random-key 16)
+          "TOKEN_KEY"     (system/random-key 32)
+          "COOKIE_SECURE" "false"}
+         (System/getenv)))
+
 (defn start
   []
-  (alter-var-root #'system (fn [s] (or s (system/start (system/config (System/getenv))))))
+  (alter-var-root #'system (fn [s] (or s (system/start (system/config (dev-env))))))
   :started)
 
 (defn stop
@@ -21,5 +30,4 @@
 (comment
   (start)
   (stop)
-  (restart)
-  (esopa.db/notes (datomic.client.api/db (:conn system))))
+  (restart))

@@ -8,6 +8,8 @@ How we build esopa. Read this before changing code; it applies to humans and cod
 - Pedestal 0.8 for HTTP, using the `io.pedestal.connector` API on Jetty 12.
 - Datomic Local, used through the Datomic Client API (`datomic.client.api`).
 - malli for schemas, validation and generated test data.
+- Hiccup 2 for server-rendered HTML; buddy for password hashing (argon2id) and signed tokens.
+- Jakarta Mail 2 (Eclipse Angus) for sending email over SMTP, used directly: no maintained Clojure wrapper uses it.
 - mise pins the JDK and Clojure CLI and defines every task below. Run `mise install` once.
 
 Use `clojure`, never `clj`. `clj` needs rlwrap and exits without it. Any new alias that starts a JVM with the project's
@@ -120,8 +122,10 @@ The core domain is why this service exists. Model it with the most care and keep
   events or tx-data. Other code doesn't `assoc` into aggregate maps directly.
 - **Bounded contexts** are separate namespaces with a small public API. Don't reach into another context's internals;
   translate between models at the boundary.
-- The notes API in `esopa.db` and `esopa.server` is a placeholder that shows the wiring. Replace it with the real
-  domain.
+- **The identity context** (accounts, passwords, login sessions) is a supporting context, not the core domain, which
+  is still to be modelled. Its rules are in `esopa.domain.identity.account`. `esopa.identity.service` runs its use
+  cases and is the pattern for new ones: each takes a `deps` map holding the connection and every effect it needs
+  (clock, email, external checks), so tests can substitute them.
 
 ## Checked keys (Clojure 1.13)
 
@@ -160,10 +164,12 @@ When to use them:
 - **malli is the source of truth for data shapes.** Schemas live in `src`, next to the code that owns the data.
   Tests assert shapes with `m/validate` or `m/explain`. When specific values don't matter, generate test data with
   `malli.generator` instead of building fixtures by hand.
-- **Keep the fast suite fast.** Don't use sleeps, network ports or external services.
-  - HTTP tests call the connector with `io.pedestal.connector.test/response-for`.
-  - Database tests use in-memory Datomic (`:storage-dir :mem`) with a fresh `db-name` per test; see
-    `esopa.server-test`.
+- **Keep the fast suite fast.** Don't use sleeps, network ports or external services. The one exception is a server
+  running inside the test JVM on a random local port, like GreenMail, the SMTP server in `esopa.email-test`.
+  - HTTP tests call the connector with `io.pedestal.connector.test/response-for`. `esopa.identity.web-test` drives
+    pages like a browser: it keeps cookies, follows redirects and submits forms with their anti-forgery token.
+  - Database tests use in-memory Datomic (`:storage-dir :mem`) with a fresh `db-name` per test; see `test-deps` in
+    `esopa.identity.service-test`, which also fixes the clock and collects sent emails.
 - **Write generative tests** (`clojure.test.check` with malli generators) when a property states the behaviour more
   clearly than examples do. Good candidates are:
   - aggregate invariants
@@ -175,13 +181,13 @@ When to use them:
   them, and keep the number of trials modest:
 
   ```clojure
-  (defspec ^:generative created-notes-are-valid 100
-    (prop/for-all [text (mg/generator note/Text)]
-      (m/validate note/Note (note/create {:text text} {:id (random-uuid) :now (java.util.Date.)}))))
+  (defspec ^:generative normalizing-an-email-is-idempotent 100
+    (prop/for-all [email (mg/generator account/Email)]
+      (let [normalized (account/normalize-email email)]
+        (= normalized (account/normalize-email normalized)))))
   ```
 
-  Run `mise run test:generative` when you change code they cover, and before you finish. Until the first
-  `^:generative` test exists, that task prints a warning and runs the whole fast suite instead.
+  Run `mise run test:generative` when you change code they cover, and before you finish.
 
 ## CRAP metric
 
@@ -239,18 +245,40 @@ times, HTTP clients, retries, configuration, scheduling, caching and auth. Check
 Write it yourself only when nothing fits, and keep it small. When you add a dependency, pin an exact version in
 `deps.edn` and explain the choice in your summary.
 
+## Security
+
+- Every form posts its anti-forgery token; build forms with the `form` helper in `esopa.identity.views`.
+- Render HTML with Hiccup, which escapes text. Never pass user input to `hiccup2.core/raw`.
+- The Content-Security-Policy only allows esopa's own scripts and styles, so put them in `resources/public/assets`,
+  never inline.
+- Secrets come from the environment and are validated at startup (`esopa.system/Config`). Never log passwords,
+  tokens or the links in emails, except through `esopa.email/log-email!`, which is for development only and is what
+  esopa uses when `SMTP_HOST` isn't set.
+- Don't reveal whether an email address has an account: registration, password reset and resending confirmation
+  give the same outcome either way.
+
 ## Layout
 
 ```
-src/esopa/main.clj      -main entry point
-src/esopa/system.clj    configuration from the environment; start and stop
-src/esopa/server.clj    routes, handlers, Pedestal connector
-src/esopa/db.clj        Datomic schema, connection, queries
-dev/user.clj            REPL helpers
-test/esopa/             tests, mirroring src
-tests.edn               Kaocha suites (:unit, :generative) and Cloverage options
-build.clj               uberjar and the CRAP gate
-mise.toml               tool versions and tasks
+src/esopa/main.clj                     -main entry point
+src/esopa/system.clj                   configuration from the environment; start and stop
+src/esopa/server.clj                   Pedestal connector: interceptors, session cookie, security headers, routes
+src/esopa/db.clj                       Datomic connection and the schema of every context
+src/esopa/email.clj                    sending email over SMTP, or to the log without SMTP settings
+src/esopa/domain/identity/account.clj  the Account aggregate: pure rules, schemas and limits
+src/esopa/identity/service.clj         identity use cases, with their effects
+src/esopa/identity/db.clj              account schema and queries
+src/esopa/identity/web.clj             identity routes and handlers
+src/esopa/identity/views.clj           identity pages (Hiccup)
+src/esopa/identity/emails.clj          identity emails
+src/esopa/security/                    password hashing, signed tokens, Pwned Passwords, throttling
+resources/public/assets/               stylesheet and scripts
+dev/user.clj                           REPL helpers
+test/esopa/                            tests, mirroring src
+docs/domain.md                         the domain: glossary, contexts, aggregates, rules
+tests.edn                              Kaocha suites (:unit, :generative) and Cloverage options
+build.clj                              uberjar and the CRAP gate
+mise.toml                              tool versions and tasks
 ```
 
 ## Before you finish

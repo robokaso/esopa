@@ -7,6 +7,8 @@
 
   <logger name="datomic" level="WARN"/>
   <logger name="org.eclipse.jetty" level="WARN"/>
+  <!-- GreenMail, the SMTP server in esopa.email-test, logs every mailbox it creates. -->
+  <logger name="com.icegreen.greenmail" level="WARN"/>
 
   <root level="INFO">
     <appender-ref ref="STDOUT"/>

@@ -1,0 +1,23 @@
+body {
+  font-family: system-ui, sans-serif;
+  line-height: 1.5;
+  max-width: 32rem;
+  margin: 0 auto;
+  padding: 1rem;
+  color: #1a1a1a;
+  background: #fff;
+}
+header nav { display: flex; flex-wrap: wrap; gap: 1rem; align-items: center; }
+header form { display: inline; }
+label { display: block; margin: 1rem 0 0.25rem; }
+input:not([type=checkbox]) { box-sizing: border-box; width: 100%; padding: 0.5rem; font: inherit; }
+label.inline { display: inline; margin: 0; }
+button { margin-top: 1rem; padding: 0.5rem 1rem; font: inherit; }
+header button { margin-top: 0; }
+.problem { color: #b00020; }
+.flash { background: #e8f5e9; padding: 0.75rem; }
+@media (prefers-color-scheme: dark) {
+  body { color: #eee; background: #121212; }
+  .problem { color: #ff8a80; }
+  .flash { background: #1b3a1f; }
+}

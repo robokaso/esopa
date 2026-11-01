@@ -7,8 +7,14 @@ description = "Start an nREPL-enabled development REPL"
 run = "clojure -M:dev:test:nrepl"
 
 [tasks.run]
-description = "Run the web server"
-run = "clojure -M:run"
+description = "Run the web server locally, with throwaway keys unless SESSION_KEY and TOKEN_KEY are set"
+run = '''
+#!/usr/bin/env bash
+export SESSION_KEY="${SESSION_KEY:-$(head -c 16 /dev/urandom | base64)}"
+export TOKEN_KEY="${TOKEN_KEY:-$(head -c 32 /dev/urandom | base64)}"
+export COOKIE_SECURE="${COOKIE_SECURE:-false}"
+exec clojure -M:run
+'''
 
 [tasks.test]
 description = "Run the fast test suite"

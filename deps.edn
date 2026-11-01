@@ -5,6 +5,10 @@
         io.pedestal/pedestal.jetty     {:mvn/version "0.8.2"}
         com.datomic/local              {:mvn/version "1.0.301"}
         metosin/malli                  {:mvn/version "0.20.3"}
+        hiccup/hiccup                  {:mvn/version "2.0.0"}
+        buddy/buddy-hashers            {:mvn/version "2.0.167"}
+        buddy/buddy-sign               {:mvn/version "3.6.1-359"}
+        org.eclipse.angus/jakarta.mail {:mvn/version "2.0.5"}
         ch.qos.logback/logback-classic {:mvn/version "1.6.6"}}
 
  :aliases
@@ -29,7 +33,8 @@
   :test {:extra-paths ["test"]
          :extra-deps  {lambdaisland/kaocha           {:mvn/version "1.91.1392"}
                        lambdaisland/kaocha-cloverage {:mvn/version "1.1.89"}
-                       org.clojure/test.check        {:mvn/version "1.1.3"}}
+                       org.clojure/test.check        {:mvn/version "1.1.3"}
+                       com.icegreen/greenmail        {:mvn/version "2.1.15"}}
          :jvm-opts    ["--sun-misc-unsafe-memory-access=allow"]
          :main-opts   ["-m" "kaocha.runner"]}
 

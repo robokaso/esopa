@@ -2,22 +2,90 @@
   "Starts and stops the running application: a Datomic connection and an HTTP connector."
   (:require [clojure.java.io :as io]
             [esopa.db :as db]
+            [esopa.email :as email]
+            [esopa.identity.service :as service]
+            [esopa.security.password :as password]
+            [esopa.security.pwned :as pwned]
             [esopa.server :as server]
-            [io.pedestal.connector :as connector]))
+            [io.pedestal.connector :as connector]
+            [malli.core :as m]
+            [malli.error :as me])
+  (:import (java.security SecureRandom)
+           (java.util Base64)))
+
+(defn- decode-key
+  "Decodes a base64 key, keeping the original value when it isn't valid base64,
+  so that validation reports it."
+  [s]
+  (try
+    (.decode (Base64/getDecoder) ^String s)
+    (catch IllegalArgumentException _
+      s)))
+
+(defn random-key
+  "A random key of `n` bytes, base64-encoded, for SESSION_KEY or TOKEN_KEY."
+  [n]
+  (let [bytes (byte-array n)]
+    (.nextBytes (SecureRandom.) bytes)
+    (.encodeToString (Base64/getEncoder) bytes)))
 
 (defn config
   "Configuration from `env`, a map of environment variable names to values such
-  as (System/getenv), with local development defaults."
+  as (System/getenv), with local development defaults. The keys have no
+  defaults; see Config. Without SMTP_HOST, emails are only logged."
   [env]
-  {:host        (get env "HOST" "localhost")
-   :port        (parse-long (get env "PORT" "8080"))
-   :storage-dir (.getAbsolutePath (io/file (get env "DATOMIC_STORAGE_DIR" "data/datomic")))
-   :db-name     (get env "DATOMIC_DB_NAME" "esopa")})
+  {:host           (get env "HOST" "localhost")
+   :port           (parse-long (get env "PORT" "8080"))
+   :storage-dir    (.getAbsolutePath (io/file (get env "DATOMIC_STORAGE_DIR" "data/datomic")))
+   :db-name        (get env "DATOMIC_DB_NAME" "esopa")
+   :base-url       (get env "BASE_URL" "http://localhost:8080")
+   :cookie-secure? (not= "false" (get env "COOKIE_SECURE"))
+   :trusted-proxies (parse-long (get env "TRUSTED_PROXIES" "0"))
+   :smtp           (when-let [host (get env "SMTP_HOST")]
+                     {:host      host
+                      :port      (parse-long (get env "SMTP_PORT" "587"))
+                      :from      (get env "SMTP_FROM")
+                      :username  (get env "SMTP_USERNAME")
+                      :password  (get env "SMTP_PASSWORD")
+                      :starttls? (not= "false" (get env "SMTP_STARTTLS"))})
+   :session-key    (some-> (get env "SESSION_KEY") decode-key)
+   :token-key      (some-> (get env "TOKEN_KEY") decode-key)})
+
+(defn- key-of
+  [pred message]
+  [:fn {:error/message message} #(and (bytes? %) (pred (alength ^bytes %)))])
+
+(def Config
+  [:map
+   [:trusted-proxies [:int {:min 0 :error/message "TRUSTED_PROXIES must be the number of proxies in front of esopa"}]]
+   [:session-key (key-of #(= 16 %) "SESSION_KEY must be 16 random bytes, base64-encoded")]
+   [:token-key (key-of #(<= 32 %) "TOKEN_KEY must be at least 32 random bytes, base64-encoded")]
+   [:smtp [:maybe [:map
+                   [:port [:int {:min 1 :max 65535 :error/message "SMTP_PORT must be a port number"}]]
+                   [:from [:string {:min 1 :error/message "SMTP_FROM must be set when SMTP_HOST is"}]]]]]])
+
+(defn- validate!
+  [config]
+  (when-let [errors (me/humanize (m/explain Config config))]
+    (throw (ex-info (str "Invalid configuration: " (pr-str (vals errors))) {:errors errors}))))
+
+(defn- identity-deps
+  [config conn]
+  {:conn             conn
+   :password-options password/default-options
+   :token-key        (:token-key config)
+   :send-email       (email/sender (:smtp config))
+   :breached?        (pwned/checker (pwned/http-fetcher pwned/default-fetcher-options))
+   :now              #(java.util.Date.)
+   :base-url         (:base-url config)
+   :counters         (service/new-counters)})
 
 (defn start
+  "Starts the application. Throws when `config` is invalid."
   [config]
+  (validate! config)
   (let [conn      (db/connect config)
-        connector (server/create-connector (assoc config :conn conn))]
+        connector (server/create-connector (assoc config :identity-deps (identity-deps config conn)))]
     (connector/start! connector)
     {:config config :conn conn :connector connector}))
 
