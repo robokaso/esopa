@@ -11,8 +11,29 @@ description = "Run the web server"
 run = "clojure -M:run"
 
 [tasks.test]
-description = "Run the test suite"
-run = "clojure -X:test"
+description = "Run the fast test suite"
+run = "clojure -M:test unit"
+
+[tasks."test:watch"]
+description = "Rerun the fast test suite on every change (red-green loop)"
+run = "clojure -M:test unit --watch"
+
+[tasks."test:generative"]
+description = "Run the generative (property-based) tests"
+run = "clojure -M:test generative"
+
+[tasks.crap]
+description = "Run the fast suite under coverage and report CRAP scores"
+run = "clojure -M:crap --coverage-command 'clojure -M:test unit --plugin cloverage'"
+
+[tasks.ci]
+description = "The CI build: fast suite under coverage plus the CRAP gate"
+depends = ["crap"]
+run = "clojure -T:build crap-gate"
+
+[tasks.mutate]
+description = "Mutation-test one source file: mise run mutate src/esopa/<file>.clj"
+run = "clojure -M:mutate --test-command 'clojure -M:test unit' --coverage-command 'clojure -M:test unit --plugin cloverage' --test-roots test --max-workers 3"
 
 [tasks.outdated]
 description = "List outdated dependencies"

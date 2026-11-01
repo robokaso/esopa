@@ -12,13 +12,19 @@ mise install
 
 ## Tasks
 
-| Command            | What it does                                                        |
-|--------------------|---------------------------------------------------------------------|
-| `mise run dev`     | nREPL (with CIDER middleware) in Pedestal dev mode; then `(start)`  |
-| `mise run run`     | Start the server on http://localhost:8080                           |
-| `mise run test`    | Run the tests (each test uses a fresh in-memory database)           |
-| `mise run uberjar` | Build `target/esopa.jar`                                            |
-| `mise run outdated`| Report outdated dependencies (antq)                                 |
+| Command                                | What it does                                                        |
+|----------------------------------------|---------------------------------------------------------------------|
+| `mise run dev`                         | nREPL (with CIDER middleware) in Pedestal dev mode; then `(start)`  |
+| `mise run run`                         | Start the server on http://localhost:8080                           |
+| `mise run test`                        | Run the fast test suite (Kaocha)                                    |
+| `mise run test:watch`                  | Rerun the fast suite on every change                                |
+| `mise run test:generative`             | Run the generative (property-based) tests                           |
+| `mise run ci`                          | Fast suite under coverage, CRAP report, fail if any function > 15   |
+| `mise run mutate src/esopa/<file>.clj` | Mutation-test one source file                                       |
+| `mise run uberjar`                     | Build `target/esopa.jar`                                            |
+| `mise run outdated`                    | Report outdated dependencies (antq)                                 |
+
+How we develop (TDD, DDD, checked keys, CRAP and mutation testing) is described in [AGENTS.md](AGENTS.md).
 
 Run the jar with `java --sun-misc-unsafe-memory-access=allow -jar target/esopa.jar`. The flag silences a JDK 25
 warning about `sun.misc.Unsafe` use in Caffeine, a Datomic dependency.
@@ -36,7 +42,7 @@ warning about `sun.misc.Unsafe` use in Caffeine, a Datomic dependency.
 
 - `src/esopa/db.clj` – schema, connection, queries
 - `src/esopa/server.clj` – routes, handlers, Pedestal connector
-- `src/esopa/system.clj` – start/stop of the whole app
+- `src/esopa/system.clj` – configuration from the environment, start/stop of the whole app
 - `src/esopa/main.clj` – `-main` entry point
 - `dev/user.clj` – REPL helpers `start`, `stop`, `restart`
 

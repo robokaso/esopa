@@ -6,12 +6,13 @@
             [io.pedestal.connector :as connector]))
 
 (defn config
-  "Configuration read from the environment, with local development defaults."
-  []
-  {:host        (or (System/getenv "HOST") "localhost")
-   :port        (parse-long (or (System/getenv "PORT") "8080"))
-   :storage-dir (.getAbsolutePath (io/file (or (System/getenv "DATOMIC_STORAGE_DIR") "data/datomic")))
-   :db-name     (or (System/getenv "DATOMIC_DB_NAME") "esopa")})
+  "Configuration from `env`, a map of environment variable names to values such
+  as (System/getenv), with local development defaults."
+  [env]
+  {:host        (get env "HOST" "localhost")
+   :port        (parse-long (get env "PORT" "8080"))
+   :storage-dir (.getAbsolutePath (io/file (get env "DATOMIC_STORAGE_DIR" "data/datomic")))
+   :db-name     (get env "DATOMIC_DB_NAME" "esopa")})
 
 (defn start
   [config]

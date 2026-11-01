@@ -5,7 +5,7 @@
 
 (defn start
   []
-  (alter-var-root #'system (fn [s] (or s (system/start (system/config)))))
+  (alter-var-root #'system (fn [s] (or s (system/start (system/config (System/getenv))))))
   :started)
 
 (defn stop

@@ -1,0 +1,13 @@
+#kaocha/v1
+{:tests [;; Fast suite: the TDD loop and CI. Excludes generative tests.
+         {:id        :unit
+          :skip-meta [:generative]}
+         ;; Generative (property-based) tests, tagged ^:generative. Run on demand.
+         {:id         :generative
+          :focus-meta [:generative]}]
+
+ ;; Used when the cloverage plugin is enabled (mise run crap / ci / mutate).
+ :cloverage/opts {:output   "target/coverage"
+                  :html?    true
+                  :lcov?    true
+                  :summary? false}}

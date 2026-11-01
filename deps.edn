@@ -4,6 +4,7 @@
         io.pedestal/pedestal.service   {:mvn/version "0.8.2"}
         io.pedestal/pedestal.jetty     {:mvn/version "0.8.2"}
         com.datomic/local              {:mvn/version "1.0.301"}
+        metosin/malli                  {:mvn/version "0.20.3"}
         ch.qos.logback/logback-classic {:mvn/version "1.6.6"}}
 
  :aliases
@@ -24,11 +25,21 @@
                        "--middleware" "[cider.nrepl/cider-middleware]"
                        "--interactive"]}
 
-  ;; clojure -X:test
+  ;; clojure -M:test [suite-id] [--watch] (suites are defined in tests.edn)
   :test {:extra-paths ["test"]
-         :extra-deps  {io.github.cognitect-labs/test-runner {:git/tag "v0.5.1" :git/sha "dfb30dd"}}
+         :extra-deps  {lambdaisland/kaocha           {:mvn/version "1.91.1392"}
+                       lambdaisland/kaocha-cloverage {:mvn/version "1.1.89"}
+                       org.clojure/test.check        {:mvn/version "1.1.3"}}
          :jvm-opts    ["--sun-misc-unsafe-memory-access=allow"]
-         :exec-fn     cognitect.test-runner.api/test}
+         :main-opts   ["-m" "kaocha.runner"]}
+
+  ;; clojure -M:crap --coverage-command "<cmd>"; writes .metrics/crap.edn
+  :crap {:replace-deps {io.github.unclebob/crap4clj {:git/sha "e90be2e7aa02c2ec5d6544e9cecddc6b73ad3e4d"}}
+         :main-opts    ["-m" "crap4clj.core"]}
+
+  ;; clojure -M:mutate <source-file> --test-command "<cmd>" --coverage-command "<cmd>"
+  :mutate {:replace-deps {io.github.unclebob/clj-mutate {:git/sha "cea397da5b10b27372e36b6764728c952058e802"}}
+           :main-opts    ["-m" "clj-mutate.core"]}
 
   ;; clojure -T:build uber
   :build {:deps       {io.github.clojure/tools.build {:mvn/version "0.10.14"}}
