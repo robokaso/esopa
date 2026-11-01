@@ -29,6 +29,41 @@ dependencies needs `--sun-misc-unsafe-memory-access=allow` in `:jvm-opts`. Witho
 | `mise run run`, `mise run uberjar`               | Run the server; build `target/esopa.jar`.                                     |
 | `mise run outdated`                              | Report outdated dependencies.                                                 |
 
+## Discuss trade-offs before choosing a direction
+
+Don't settle a significant decision silently in code. Before choosing a direction, set out the trade-offs explicitly
+and agree on one with the user. This applies equally to business domain modelling and to technical design.
+
+- **Domain modelling decisions.** Examples:
+  - where aggregate and bounded-context boundaries lie
+  - what a term means and which invariants an aggregate protects
+  - whether a concept is an entity, a value or an event
+  - how a business rule handles its edge cases
+
+  Weigh how well each option matches how the business actually works and how it is likely to change, what consistency
+  the business needs, and whether domain experts would recognise the model.
+- **Technical decisions.** Examples:
+  - libraries
+  - data shapes and Datomic schema
+  - API design
+  - where effects happen
+  - performance and operational cost
+
+  Weigh complexity, testability, how easily the choice can be reversed, and the cost of changing it later.
+
+For each such decision:
+
+1. State the problem and the constraints you know of.
+2. Present at least two realistic options. For each, say what it gains and costs, both for the business and
+   technically.
+3. Recommend one and explain why.
+4. Wait for agreement before implementing it.
+5. Record the decision and the alternatives you rejected. Domain decisions go in `docs/domain.md`; technical ones go in
+   the commit message that implements them.
+
+Small choices that are easy to reverse and sit within an agreed direction don't need this. A private helper's name is
+one example.
+
 ## Red-green-refactor
 
 Every change in behaviour starts with a test.
@@ -216,6 +251,7 @@ mise.toml               tool versions and tasks
 
 ## Before you finish
 
+- Every direction-setting decision was discussed and agreed before you implemented it, and it is recorded.
 - `mise run ci` passes.
 - `mise run test:generative` passes if generative tests cover the code you changed.
 - Each source file whose tests you added or changed has been mutation-tested, with no survivors left. If one is an
