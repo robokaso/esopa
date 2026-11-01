@@ -72,7 +72,14 @@
 
 (deftest stop-test
   (testing "stopping a system that has no connector does nothing"
-    (is (nil? (system/stop {})))))
+    (is (nil? (system/stop {}))))
+  (testing "stopping finishes the queued emails and shuts the email executor down"
+    (let [executor (java.util.concurrent.Executors/newSingleThreadExecutor)
+          sent     (promise)]
+      (.execute executor ^Runnable #(deliver sent :sent))
+      (system/stop {:email-executor executor})
+      (is (.isTerminated executor))
+      (is (= :sent (deref sent 0 :not-sent))))))
 
 (deftest random-key-test
   (is (= 16 (count (.decode (java.util.Base64/getDecoder) ^String (system/random-key 16)))))

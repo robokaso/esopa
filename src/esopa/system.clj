@@ -11,7 +11,8 @@
             [malli.core :as m]
             [malli.error :as me])
   (:import (java.security SecureRandom)
-           (java.util Base64)))
+           (java.util Base64)
+           (java.util.concurrent ExecutorService Executors TimeUnit)))
 
 (defn- decode-key
   "Decodes a base64 key, keeping the original value when it isn't valid base64,
@@ -70,11 +71,11 @@
     (throw (ex-info (str "Invalid configuration: " (pr-str (vals errors))) {:errors errors}))))
 
 (defn- identity-deps
-  [config conn]
+  [config conn email-executor]
   {:conn             conn
    :password-options password/default-options
    :token-key        (:token-key config)
-   :send-email       (email/sender (:smtp config))
+   :send-email       (email/in-background (email/sender (:smtp config)) email-executor)
    :breached?        (pwned/checker (pwned/http-fetcher pwned/default-fetcher-options))
    :now              #(java.util.Date.)
    :base-url         (:base-url config)
@@ -84,13 +85,19 @@
   "Starts the application. Throws when `config` is invalid."
   [config]
   (validate! config)
-  (let [conn      (db/connect config)
-        connector (server/create-connector (assoc config :identity-deps (identity-deps config conn)))]
+  (let [conn           (db/connect config)
+        email-executor (Executors/newSingleThreadExecutor)
+        connector      (server/create-connector
+                         (assoc config :identity-deps (identity-deps config conn email-executor)))]
     (connector/start! connector)
-    {:config config :conn conn :connector connector}))
+    {:config config :conn conn :connector connector :email-executor email-executor}))
 
 (defn stop
-  [{:keys [connector]}]
+  "Stops serving requests, then waits up to 15 seconds for queued emails to be sent."
+  [{:keys [connector ^ExecutorService email-executor]}]
   (when connector
     (connector/stop! connector))
+  (when email-executor
+    (.shutdown email-executor)
+    (.awaitTermination email-executor 15 TimeUnit/SECONDS))
   nil)

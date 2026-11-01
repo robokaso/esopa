@@ -17,8 +17,10 @@
   :run {:jvm-opts  ["--sun-misc-unsafe-memory-access=allow"]
         :main-opts ["-m" "esopa.main"]}
 
-  ;; REPL tooling; dev mode enables Pedestal's live route reloading and dev interceptors
+  ;; REPL tooling; dev mode enables Pedestal's live route reloading and dev interceptors.
+  ;; GreenMail catches the emails the REPL's system sends (see dev/user.clj).
   :dev {:extra-paths ["dev"]
+        :extra-deps  {com.icegreen/greenmail {:mvn/version "2.1.15"}}
         :jvm-opts    ["--sun-misc-unsafe-memory-access=allow"
                       "-Dio.pedestal.dev-mode=true"]}
 

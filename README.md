@@ -56,7 +56,12 @@ dependency.
 The server refuses to start when a key is missing or the wrong size. `mise run run` and the REPL's `(start)` generate
 throwaway keys, so restarting them logs you out.
 
-Without `SMTP_HOST`, emails, including their links, are written to the log. That is only fit for development.
+Emails are sent in the background. Without `SMTP_HOST`, they are written to the log, links included, which is only
+fit for development.
+
+In the REPL, `(start)` also starts GreenMail, an SMTP server inside the JVM, and sends email to it unless
+`SMTP_HOST` is set. `(emails)` lists what was sent, newest first, and `(last-link)` returns the link from the newest
+email, ready to open in a browser.
 
 ## Pages
 

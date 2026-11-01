@@ -4,7 +4,8 @@
   (:require [io.pedestal.log :as log])
   (:import (jakarta.mail Message$RecipientType Session Transport)
            (jakarta.mail.internet InternetAddress MimeMessage)
-           (java.util Properties)))
+           (java.util Properties)
+           (java.util.concurrent Executor)))
 
 (defn log-email!
   "Writes `email`, a map of :to, :subject and :body, to the log instead of sending it.
@@ -58,3 +59,17 @@
   (if smtp
     (smtp-sender smtp)
     log-email!))
+
+(defn in-background
+  "A function that hands each email to `executor` to be sent with `send`, and
+  returns at once. Responses then take as long whether or not an email is sent,
+  and a failure to send is logged instead of failing the request."
+  [send executor]
+  (fn [email]
+    (.execute ^Executor executor
+              ^Runnable (fn []
+                          (try
+                            (send email)
+                            (catch Exception e
+                              (log/error :msg "Sending email failed" :subject (:subject email) :exception e)))))
+    nil))

@@ -27,7 +27,7 @@ dependencies needs `--sun-misc-unsafe-memory-access=allow` in `:jvm-opts`. Witho
 | `mise run crap`                                  | The CRAP report alone. Writes `.metrics/crap.edn`.                            |
 | `mise run mutate src/esopa/<file>.clj`           | Mutation testing for one source file. Not part of CI.                         |
 | `clojure -M:mutate src/esopa/<file>.clj --scan`  | Count a file's mutation sites without running tests.                          |
-| `mise run dev`                                   | nREPL in Pedestal dev mode. Use `(start)`, `(stop)`, `(restart)` in `user`.   |
+| `mise run dev`                                   | nREPL in Pedestal dev mode. Use `(start)`, `(stop)`, `(restart)` in `user`; `(emails)` and `(last-link)` show what was sent. |
 | `mise run run`, `mise run uberjar`               | Run the server; build `target/esopa.jar`.                                     |
 | `mise run outdated`                              | Report updates for `deps.edn`, GitHub Actions and mise tools, with the command that applies each. |
 
@@ -253,7 +253,9 @@ Write it yourself only when nothing fits, and keep it small. When you add a depe
   never inline.
 - Secrets come from the environment and are validated at startup (`esopa.system/Config`). Never log passwords,
   tokens or the links in emails, except through `esopa.email/log-email!`, which is for development only and is what
-  esopa uses when `SMTP_HOST` isn't set.
+  esopa uses when `SMTP_HOST` isn't set. The REPL sends to GreenMail instead.
+- Emails are sent in the background (`esopa.email/in-background`), so response times don't reveal whether an
+  address has an account. Keep it that way for any new email.
 - Don't reveal whether an email address has an account: registration, password reset and resending confirmation
   give the same outcome either way.
 

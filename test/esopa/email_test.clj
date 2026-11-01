@@ -7,7 +7,8 @@
   (:import (com.icegreen.greenmail.configuration GreenMailConfiguration)
            (com.icegreen.greenmail.util GreenMail ServerSetupTest)
            (jakarta.mail AuthenticationFailedException MessagingException)
-           (jakarta.mail.internet MimeMessage)))
+           (jakarta.mail.internet MimeMessage)
+           (java.util.concurrent Executor Executors TimeUnit)))
 
 (def ^:private ^:dynamic *greenmail* nil)
 
@@ -75,3 +76,28 @@
   (testing "with SMTP settings, emails are sent"
     ((email/sender (settings)) confirmation)
     (is (= 1 (count (received))))))
+
+(deftest in-background-test
+  (testing "hands the email to the executor and returns at once"
+    (let [tasks (atom [])
+          sent  (atom [])
+          send  (email/in-background #(swap! sent conj %)
+                                     (reify Executor
+                                       (execute [_ task] (swap! tasks conj task))))]
+      (is (nil? (send confirmation)))
+      (is (empty? @sent))
+      (.run ^Runnable (first @tasks))
+      (is (= [confirmation] @sent))))
+
+  (testing "a failure is logged, not thrown into the executor"
+    (let [send (email/in-background (fn [_] (throw (ex-info "SMTP server unreachable" {})))
+                                    (reify Executor
+                                      (execute [_ task] (.run ^Runnable task))))]
+      (is (nil? (send confirmation)))))
+
+  (testing "sends over SMTP from another thread"
+    (let [executor (Executors/newSingleThreadExecutor)]
+      ((email/in-background (email/smtp-sender (settings)) executor) confirmation)
+      (.shutdown executor)
+      (is (.awaitTermination executor 10 TimeUnit/SECONDS))
+      (is (= 1 (count (received)))))))
