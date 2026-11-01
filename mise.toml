@@ -36,8 +36,24 @@ description = "Mutation-test one source file: mise run mutate src/esopa/<file>.c
 run = "clojure -M:mutate --test-command 'clojure -M:test unit' --coverage-command 'clojure -M:test unit --plugin cloverage' --test-roots test --max-workers 3"
 
 [tasks.outdated]
-description = "List outdated dependencies"
-run = "clojure -T:antq outdated"
+description = "Report available updates for deps.edn, GitHub Actions and mise tools"
+tools = { pinact = "5.0.2" }
+quiet = true
+run = '''
+#!/usr/bin/env bash
+set -o pipefail
+status=0
+echo "== deps.edn (antq; apply with: clojure -M:antq --upgrade)"
+clojure -M:antq 2>&1 | grep -v '^SLF4J:' || status=1
+echo
+echo "== GitHub Actions (pinact; apply with: mise exec pinact@5.0.2 -- pinact run --update)"
+pinact run --update --check && echo "All actions are on their latest release." || status=1
+echo
+echo "== mise tools (apply with: mise upgrade <tool>; raise an exact pin with: mise upgrade --bump <tool>)"
+# Ignore config files above the project, such as a mise.toml in the parent directory.
+MISE_CEILING_PATHS="$(dirname "$PWD")" mise outdated --bump --local
+exit $status
+'''
 
 [tasks.uberjar]
 description = "Build target/esopa.jar"

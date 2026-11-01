@@ -27,7 +27,11 @@ dependencies needs `--sun-misc-unsafe-memory-access=allow` in `:jvm-opts`. Witho
 | `clojure -M:mutate src/esopa/<file>.clj --scan`  | Count a file's mutation sites without running tests.                          |
 | `mise run dev`                                   | nREPL in Pedestal dev mode. Use `(start)`, `(stop)`, `(restart)` in `user`.   |
 | `mise run run`, `mise run uberjar`               | Run the server; build `target/esopa.jar`.                                     |
-| `mise run outdated`                              | Report outdated dependencies.                                                 |
+| `mise run outdated`                              | Report updates for `deps.edn`, GitHub Actions and mise tools, with the command that applies each. |
+
+Dependency updates are manual; nothing opens update pull requests. Run `mise run outdated` regularly and apply updates
+as ordinary changes that pass `mise run ci`. GitHub Actions stay pinned to commit SHAs with a version comment; pinact
+updates both together.
 
 ## Discuss trade-offs before choosing a direction
 

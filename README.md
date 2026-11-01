@@ -22,7 +22,7 @@ mise install
 | `mise run ci`                          | Fast suite under coverage, CRAP report, fail if any function > 15   |
 | `mise run mutate src/esopa/<file>.clj` | Mutation-test one source file                                       |
 | `mise run uberjar`                     | Build `target/esopa.jar`                                            |
-| `mise run outdated`                    | Report outdated dependencies (antq)                                 |
+| `mise run outdated`                    | Report updates for deps.edn, GitHub Actions and mise tools          |
 
 How we develop (TDD, DDD, checked keys, CRAP and mutation testing) is described in [AGENTS.md](AGENTS.md).
 
