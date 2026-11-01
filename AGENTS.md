@@ -26,6 +26,7 @@ dependencies needs `--sun-misc-unsafe-memory-access=allow` in `:jvm-opts`. Witho
 | `mise run test`                                  | The fast suite (Kaocha `:unit`). Run it constantly.                           |
 | `mise run test:watch`                            | The fast suite again on every save: the red-green loop.                       |
 | `mise run test:generative`                       | Generative tests (`^:generative`). Not part of CI.                            |
+| `mise run test:browser`                          | Browser tests (Playwright, headless Chromium, axe-core). Not part of CI.      |
 | `mise run ci`                                    | What CI runs: the fast suite under Cloverage, the CRAP report and CRAP gate.  |
 | `mise run crap`                                  | The CRAP report alone. Writes `.metrics/crap.edn`.                            |
 | `mise run mutate src/esopa/<file>.clj`           | Mutation testing for one source file. Not part of CI.                         |
@@ -168,10 +169,10 @@ JavaScript; htmx and our scripts only improve them.
   - Never convey meaning by colour alone: an invalid field also has its problem in text.
   - Every page has `lang`, a `title` that names the page, and `alt` text on images (empty for decoration).
   - Animations respect `prefers-reduced-motion`.
-- **Testing.** Tests assert the markup that carries meaning: landmarks, labels, the `aria-*` links between fields and
-  their texts, and what takes focus (see `accessibility-test` in `esopa.identity.web-test`). Before you finish a change
-  to a page, also check it in a browser: with the keyboard alone, in light and dark themes, at phone width, and with
-  no errors in the console. Some things only a browser shows, such as focus after a swap and CSP errors.
+- **Testing.** The fast suite asserts the markup that carries meaning: landmarks, labels, the `aria-*` links between
+  fields and their texts, and what takes focus (see `accessibility-test` in `esopa.identity.web-test`). The browser
+  suite checks what only a browser shows, such as focus after a swap, keyboard use and CSP errors (see "Testing"). Run
+  it after any change to a page or a script.
 
 ## Checked keys (Clojure 1.13)
 
@@ -216,6 +217,19 @@ When to use them:
     pages like a browser: it keeps cookies, follows redirects and submits forms with their anti-forgery token.
   - Database tests use in-memory Datomic (`:storage-dir :mem`) with a fresh `db-name` per test; see `test-deps` in
     `esopa.identity.service-test`, which also fixes the clock and collects sent emails.
+- **Browser tests** live in `browser-test/` and run with `mise run test:browser`, which installs Playwright's headless
+  Chromium the first time. They're kept out of the fast suite and CI. Playwright for Java and axe-core come from the
+  `:browser` alias.
+  - `esopa.browser` runs esopa for each test on a free local port, with `test-deps`, so tests read links from the
+    outbox. Its pages fail the test on any console error or warning, script error or failed asset request, which
+    catches Content-Security-Policy violations.
+  - Wait with its helpers, never with sleeps. `click!`, `submit!` and `back!` return once the next page has replaced
+    `main`, whether htmx swapped it in or the browser loaded it. `eventually?` and `focused?` poll for up to two
+    seconds. Playwright's `waitForFunction` doesn't work on esopa's pages: the CSP refuses the code it evaluates.
+  - `esopa.identity.pages-test` shows the pattern. It covers boosted links and Back, forms with problems, busy buttons,
+    a whole visit from registering to logging out, keyboard-only use and browsing without JavaScript. It also scans
+    every page and state with axe-core, in light and dark themes, and checks phone width. Extend `every-page` when
+    you add a page or a state.
 - **Write generative tests** (`clojure.test.check` with malli generators) when a property states the behaviour more
   clearly than examples do. Good candidates are:
   - aggregate invariants
@@ -326,8 +340,9 @@ src/esopa/security/                    password hashing, signed tokens, Pwned Pa
 resources/public/assets/               stylesheet and scripts (show password, busy buttons, focus after a swap)
 dev/user.clj                           REPL helpers
 test/esopa/                            tests, mirroring src
+browser-test/esopa/                    browser tests (Playwright) and their helpers, esopa.browser
 docs/domain.md                         the domain: glossary, contexts, aggregates, rules
-tests.edn                              Kaocha suites (:unit, :generative) and Cloverage options
+tests.edn                              Kaocha suites (:unit, :generative, :browser) and Cloverage options
 build.clj                              uberjar and the CRAP gate
 mise.toml                              tool versions and tasks
 ```
@@ -339,5 +354,5 @@ mise.toml                              tool versions and tasks
 - `mise run test:generative` passes if generative tests cover the code you changed.
 - Each source file whose tests you added or changed has been mutation-tested, with no survivors left. If one is an
   equivalent mutant, say so in your summary.
-- Pages you changed were checked in a browser, as described in "Semantic, accessible HTML".
+- `mise run test:browser` passes if you changed a page, a script or a stylesheet.
 - `docs/domain.md` and `README.md` reflect the change.

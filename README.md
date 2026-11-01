@@ -28,12 +28,16 @@ mise install
 | `mise run test`                        | Run the fast test suite (Kaocha)                                    |
 | `mise run test:watch`                  | Rerun the fast suite on every change                                |
 | `mise run test:generative`             | Run the generative (property-based) tests                           |
+| `mise run test:browser`                | Run the browser tests: Playwright drives headless Chromium, axe-core checks accessibility |
 | `mise run ci`                          | Fast suite under coverage, CRAP report, fail if any function > 15   |
 | `mise run mutate src/esopa/<file>.clj` | Mutation-test one source file                                       |
 | `mise run uberjar`                     | Build `target/esopa.jar`                                            |
 | `mise run outdated`                    | Report updates for deps.edn, GitHub Actions and mise tools          |
 
 How we develop (TDD, DDD, checked keys, CRAP and mutation testing) is described in [AGENTS.md](AGENTS.md).
+
+The first `mise run test:browser` downloads Playwright's driver (about 200 MB, into `~/.m2`) and its headless Chromium
+(about 280 MB, into `~/.cache/ms-playwright`). After that, the suite takes about half a minute.
 
 Run the jar with `java --sun-misc-unsafe-memory-access=allow -jar target/esopa.jar`, with `SESSION_KEY` and
 `TOKEN_KEY` set (see below). The flag silences a JDK 25 warning about `sun.misc.Unsafe` use in Caffeine, a Datomic

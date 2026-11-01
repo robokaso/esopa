@@ -45,6 +45,13 @@
          :jvm-opts    ["--sun-misc-unsafe-memory-access=allow"]
          :main-opts   ["-m" "kaocha.runner"]}
 
+  ;; clojure -M:test:browser browser (see mise run test:browser). Playwright drives Chromium, and
+  ;; axe-core checks pages for WCAG violations. Kept out of :test so CI doesn't fetch the 200 MB driver.
+  :browser {:extra-paths ["browser-test"]
+            :extra-deps  {com.microsoft.playwright/playwright {:mvn/version "1.64.0"}
+                          com.deque.html.axe-core/playwright   {:mvn/version "4.14.0"}}
+            :jvm-opts    ["--sun-misc-unsafe-memory-access=allow"]}
+
   ;; clojure -M:crap --coverage-command "<cmd>"; writes .metrics/crap.edn
   :crap {:replace-deps {io.github.unclebob/crap4clj {:git/sha "e90be2e7aa02c2ec5d6544e9cecddc6b73ad3e4d"}}
          :main-opts    ["-m" "crap4clj.core"]}

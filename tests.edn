@@ -4,7 +4,10 @@
           :skip-meta [:generative]}
          ;; Generative (property-based) tests, tagged ^:generative. Run on demand.
          {:id         :generative
-          :focus-meta [:generative]}]
+          :focus-meta [:generative]}
+         ;; Browser tests in browser-test/, which need the :browser alias. Run on demand: mise run test:browser.
+         {:id         :browser
+          :test-paths ["browser-test"]}]
 
  ;; Used when the cloverage plugin is enabled (mise run crap / ci / mutate).
  :cloverage/opts {:output   "target/coverage"

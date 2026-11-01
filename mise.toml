@@ -28,6 +28,16 @@ run = "clojure -M:test unit --watch"
 description = "Run the generative (property-based) tests"
 run = "clojure -M:test generative"
 
+[tasks."test:browser"]
+description = "Browser tests: the pages in Playwright's headless Chromium, checked with axe-core. Not part of CI"
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+# Installs the headless Chromium this Playwright version drives, unless it's already there.
+java -cp "$(clojure -A:browser -Spath)" com.microsoft.playwright.CLI install --only-shell chromium
+exec clojure -M:test:browser browser
+'''
+
 [tasks.crap]
 description = "Run the fast suite under coverage and report CRAP scores"
 run = "clojure -M:crap --coverage-command 'clojure -M:test unit --plugin cloverage'"
