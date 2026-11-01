@@ -1,9 +1,12 @@
 (ns esopa.server-test
-  (:require [clojure.string :as str]
+  (:require [clojure.java.io :as io]
+            [clojure.string :as str]
             [clojure.test :refer [deftest is testing use-fixtures]]
             [esopa.identity.service-test :as service-test]
             [esopa.server :as server]
-            [io.pedestal.connector.test :as test]))
+            [esopa.webjars :as webjars]
+            [io.pedestal.connector.test :as test]
+            [io.pedestal.environment :as env]))
 
 (use-fixtures :once test/disable-routing-table-output-fixture)
 
@@ -25,17 +28,54 @@
     (is (= "{\"status\":\"ok\"}" (:body response)))))
 
 (deftest assets-test
-  (testing "the stylesheet and script are served"
+  (testing "the stylesheet and scripts are served"
     (let [connector (test-connector)]
       (is (= 200 (:status (test/response-for connector :get "/assets/site.css"))))
       (is (= 200 (:status (test/response-for connector :get "/assets/show-password.js"))))
-      (is (= 404 (:status (test/response-for connector :get "/assets/missing.js")))))))
+      (is (= 200 (:status (test/response-for connector :get "/assets/move-focus.js"))))
+      (is (= 200 (:status (test/response-for connector :get "/assets/show-busy.js"))))
+      (is (= 404 (:status (test/response-for connector :get "/assets/missing.js"))))))
+  (testing "paths can't climb out of the assets with .. to reach the rest of the class path"
+    (let [connector (test-connector)]
+      (is (= 404 (:status (test/response-for connector :get "/assets/../../esopa/system.clj"))))
+      (is (= 404 (:status (test/response-for connector :get "/assets/..%2F..%2Fesopa/system.clj")))))))
+
+(deftest dev-mode-assets-test
+  (testing "in dev mode, an asset edited while esopa runs is served as it is now"
+    (let [file (io/file "resources/public/assets" (str "edited-" (random-uuid) ".txt"))
+          url  (str "/assets/" (.getName file))]
+      (try
+        (spit file "before")
+        (with-redefs [env/dev-mode? true]
+          (let [connector (test-connector)]
+            (is (= "before" (:body (test/response-for connector :get url))))
+            (spit file "and after")
+            (let [response (test/response-for connector :get url)]
+              (is (= "and after" (:body response)))
+              (is (= "9" (get-in response [:headers "Content-Length"]))))))
+        (finally
+          (io/delete-file file true))))))
+
+(deftest webjars-test
+  (let [connector (test-connector)]
+    (testing "htmx and Pico are served from their WebJars"
+      (let [response (test/response-for connector :get (webjars/path "htmx.org" "dist/htmx.min.js"))]
+        (is (= 200 (:status response)))
+        (is (str/starts-with? (get-in response [:headers "Content-Type"]) "text/javascript")))
+      (let [response (test/response-for connector :get (webjars/path "picocss__pico" "css/pico.min.css"))]
+        (is (= 200 (:status response)))
+        (is (str/starts-with? (get-in response [:headers "Content-Type"]) "text/css"))))
+    (testing "nothing else on the class path"
+      (is (= 404 (:status (test/response-for connector :get "/webjars/htmx.org/missing.js"))))
+      (is (= 404 (:status (test/response-for connector :get "/webjars/../../../esopa/system.clj")))))))
 
 (deftest security-headers-test
   (let [headers (:headers (test/response-for (test-connector) :get "/"))]
     (testing "only esopa's own scripts, styles and form targets"
       (is (str/includes? (get headers "Content-Security-Policy") "default-src 'self'"))
       (is (str/includes? (get headers "Content-Security-Policy") "form-action 'self'")))
+    (testing "images may also be data: URIs, which Pico uses for its icons"
+      (is (str/includes? (get headers "Content-Security-Policy") "img-src 'self' data:")))
     (testing "the session cookie can't be read by scripts and stays on esopa's own pages"
       (let [cookie (str/join "\n" (get headers "Set-Cookie"))]
         (is (str/includes? cookie "esopa-session="))

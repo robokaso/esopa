@@ -9,6 +9,9 @@ How we build esopa. Read this before changing code; it applies to humans and cod
 - Datomic Local, used through the Datomic Client API (`datomic.client.api`).
 - malli for schemas, validation and generated test data.
 - Hiccup 2 for server-rendered HTML; buddy for password hashing (argon2id) and signed tokens.
+- htmx 4 boosts the pages and Pico CSS 2 styles them. Both are WebJars, Maven dependencies served from the class path
+  under `/webjars`; `esopa.webjars/path` gives a file's URL with the version in it. Add front-end libraries the same
+  way, never from a CDN.
 - Jakarta Mail 2 (Eclipse Angus) for sending email over SMTP, used directly: no maintained Clojure wrapper uses it.
 - mise pins the JDK and Clojure CLI and defines every task below. Run `mise install` once.
 
@@ -126,6 +129,49 @@ The core domain is why this service exists. Model it with the most care and keep
   is still to be modelled. Its rules are in `esopa.domain.identity.account`. `esopa.identity.service` runs its use
   cases and is the pattern for new ones: each takes a `deps` map holding the connection and every effect it needs
   (clock, email, external checks), so tests can substitute them.
+
+## Semantic, accessible HTML
+
+Pages are clean, semantic HTML that meets [WCAG 2.2](https://www.w3.org/TR/WCAG22/) level AA. They work without
+JavaScript; htmx and our scripts only improve them.
+
+- **Elements for their meaning.** Use the element that says what the content is:
+  - `header`, `nav`, `main` and `footer` for the page's landmarks
+  - one `h1` per page, and headings in order
+  - lists for lists
+  - `a` to go somewhere, `button` to do something
+  - a `label` for every field, and `fieldset` with `legend` for a group of fields
+
+  Don't build these from `div` and `span`.
+- **HTML before ARIA.** Add ARIA only where HTML has no element or attribute for the meaning, such as `role="alert"`,
+  `role="switch"`, `aria-invalid` and `aria-describedby`. Wrong ARIA is worse than none.
+- **Few classes.** Pico styles semantic elements, so markup needs few classes. Add one only for what elements and
+  attributes can't express. Put esopa's styles in `site.css`, built on Pico's variables so they follow its light and
+  dark themes.
+- **Forms.**
+  - Every field has a visible label and the `autocomplete` hint that fits it.
+  - Help text sits below its field, linked with `aria-describedby`.
+  - A problem is described in text. It's announced with `role="alert"` and takes focus with `autofocus`. The field it's
+    about gets `aria-invalid="true"` and is described by it. `field` in `esopa.identity.views` does this.
+  - A form shown again keeps what was typed, except passwords.
+  - While htmx submits a form, its button is marked `aria-busy` (`show-busy.js`).
+- **Keyboard and focus.**
+  - Everything works with the keyboard alone, in a sensible order, with a visible focus indicator. Never remove
+    outlines.
+  - A full page load puts screen readers at the start of the new page; a swap doesn't. So after htmx swaps in a page,
+    `move-focus.js` moves focus to its `h1`, which has `tabindex="-1"` so it can take focus. An `autofocus` element,
+    like a problem, takes focus instead.
+  - A message shown after a redirect follows the `h1`, so reading on from the heading reaches it.
+- **Perceivable.**
+  - Text contrast is at least 4.5:1 (3:1 for large text and for the borders of controls), in light and dark themes.
+    Pico's colours meet this; check any colour you add.
+  - Never convey meaning by colour alone: an invalid field also has its problem in text.
+  - Every page has `lang`, a `title` that names the page, and `alt` text on images (empty for decoration).
+  - Animations respect `prefers-reduced-motion`.
+- **Testing.** Tests assert the markup that carries meaning: landmarks, labels, the `aria-*` links between fields and
+  their texts, and what takes focus (see `accessibility-test` in `esopa.identity.web-test`). Before you finish a change
+  to a page, also check it in a browser: with the keyboard alone, in light and dark themes, at phone width, and with
+  no errors in the console. Some things only a browser shows, such as focus after a swap and CSP errors.
 
 ## Checked keys (Clojure 1.13)
 
@@ -250,7 +296,9 @@ Write it yourself only when nothing fits, and keep it small. When you add a depe
 - Every form posts its anti-forgery token; build forms with the `form` helper in `esopa.identity.views`.
 - Render HTML with Hiccup, which escapes text. Never pass user input to `hiccup2.core/raw`.
 - The Content-Security-Policy only allows esopa's own scripts and styles, so put them in `resources/public/assets`,
-  never inline.
+  never inline. Images may also be `data:` URIs, which Pico uses for its icons.
+- Serve files from the class path only through `resource-routes` in `esopa.server`, which refuses paths that climb
+  out with `..`. Pedestal's own `resource-routes` doesn't check for them.
 - Secrets come from the environment and are validated at startup (`esopa.system/Config`). Never log passwords,
   tokens or the links in emails, except through `esopa.email/log-email!`, which is for development only and is what
   esopa uses when `SMTP_HOST` isn't set. The REPL sends to GreenMail instead.
@@ -267,6 +315,7 @@ src/esopa/system.clj                   configuration from the environment; start
 src/esopa/server.clj                   Pedestal connector: interceptors, session cookie, security headers, routes
 src/esopa/db.clj                       Datomic connection and the schema of every context
 src/esopa/email.clj                    sending email over SMTP, or to the log without SMTP settings
+src/esopa/webjars.clj                  URLs of the files in WebJars (htmx, Pico)
 src/esopa/domain/identity/account.clj  the Account aggregate: pure rules, schemas and limits
 src/esopa/identity/service.clj         identity use cases, with their effects
 src/esopa/identity/db.clj              account schema and queries
@@ -274,7 +323,7 @@ src/esopa/identity/web.clj             identity routes and handlers
 src/esopa/identity/views.clj           identity pages (Hiccup)
 src/esopa/identity/emails.clj          identity emails
 src/esopa/security/                    password hashing, signed tokens, Pwned Passwords, throttling
-resources/public/assets/               stylesheet and scripts
+resources/public/assets/               stylesheet and scripts (show password, busy buttons, focus after a swap)
 dev/user.clj                           REPL helpers
 test/esopa/                            tests, mirroring src
 docs/domain.md                         the domain: glossary, contexts, aggregates, rules
@@ -290,4 +339,5 @@ mise.toml                              tool versions and tasks
 - `mise run test:generative` passes if generative tests cover the code you changed.
 - Each source file whose tests you added or changed has been mutation-tested, with no survivors left. If one is an
   equivalent mutant, say so in your summary.
+- Pages you changed were checked in a browser, as described in "Semantic, accessible HTML".
 - `docs/domain.md` and `README.md` reflect the change.

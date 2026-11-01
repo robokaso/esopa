@@ -5,6 +5,7 @@
             [clojure.test :refer [deftest is testing use-fixtures]]
             [esopa.identity.service-test :as service-test]
             [esopa.server-test :as server-test]
+            [esopa.webjars :as webjars]
             [io.pedestal.connector.test :as test])
   (:import (java.net URLEncoder)
            (java.nio.charset StandardCharsets)))
@@ -124,6 +125,51 @@
       (is (str/includes? (:body (visit! b "/login")) "autocomplete=\"current-password\""))))
   (testing "the show-password script runs once the page has loaded"
     (is (str/includes? (:body (visit! (browser) "/")) "<script defer src=\"/assets/show-password.js\">"))))
+
+(deftest layout-test
+  (let [page (:body (visit! (browser) "/"))]
+    (testing "Pico styles the pages"
+      (is (str/includes? page (str "<link href=\"" (webjars/path "picocss__pico" "css/pico.min.css")
+                                   "\" rel=\"stylesheet\"><link href=\"/assets/site.css\" rel=\"stylesheet\">"))))
+    (testing "htmx boosts links and forms: it fetches the next page and swaps in its body, without a reload"
+      (is (str/includes? page (str "<script defer src=\"" (webjars/path "htmx.org" "dist/htmx.min.js") "\">")))
+      (is (str/includes? page "<body hx-boost:inherited=\"true\">"))
+      (testing "and adds no styles of its own"
+        (is (str/includes? page "<meta content=\"includeIndicatorCSS:false\" name=\"htmx-config\">")))
+      (testing "while a form is being submitted, its button shows it's busy"
+        (is (str/includes? page "<script defer src=\"/assets/show-busy.js\">"))))
+    (testing "after a swap, focus moves to the new page's heading, which can take focus"
+      (is (str/includes? page "<script defer src=\"/assets/move-focus.js\">"))
+      (is (str/includes? page "<h1 tabindex=\"-1\">Welcome</h1>")))
+    (testing "the header, navigation and main content are landmarks"
+      (is (re-find #"<header class=\"container\"><nav>.*</nav></header><main class=\"container\">" page)))))
+
+(deftest accessibility-test
+  (let [b (browser)]
+    (testing "help texts describe their fields"
+      (visit! b "/register")
+      (is (str/includes? (:page @b) (str "<input aria-describedby=\"password-help\" autocomplete=\"new-password\" "
+                                         "class=\"password\" id=\"password\"")))
+      (is (str/includes? (:page @b) "<small id=\"password-help\">At least 8 characters.")))
+    (testing "show password is a switch"
+      (is (str/includes? (:page @b) "<label><input data-show-password role=\"switch\" type=\"checkbox\">Show password</label>")))
+    (testing "a problem is announced and takes focus; the field it's about is marked invalid and described by it"
+      (let [page (:body (submit! b "/register" {:email "ada@example.com" :password "short"}))]
+        (is (str/includes? page "<p autofocus id=\"problem\" role=\"alert\" tabindex=\"-1\">Use at least 8 characters.</p>"))
+        (is (re-find #"<input aria-describedby=\"problem password-help\" aria-invalid=\"true\" [^>]*id=\"password\"" page))
+        (is (str/includes? page "<input autocomplete=\"email\" id=\"email\""))))
+    (testing "a problem with the email address marks only the email field"
+      (let [page (:body (submit! b "/register" {:email "ada" :password "correct horse"}))]
+        (is (str/includes? page "<input aria-describedby=\"problem\" aria-invalid=\"true\" autocomplete=\"email\" id=\"email\""))
+        (is (str/includes? page "<input aria-describedby=\"password-help\" autocomplete=\"new-password\""))))
+    (testing "a problem with the whole form marks no single field"
+      (visit! b "/login")
+      (let [page (:body (submit! b "/login" {:email "ada@example.com" :password "wrong horse"}))]
+        (is (str/includes? page "role=\"alert\""))
+        (is (not (str/includes? page "aria-invalid")))))
+    (testing "a message after a redirect follows the heading, so reading on from the heading reaches it"
+      (is (str/includes? (:body (visit! b "/password/change"))
+                         "<h1 tabindex=\"-1\">Log in</h1><p role=\"status\">Log in first.</p>")))))
 
 (deftest register-problems-test
   (let [b (browser)]

@@ -7,6 +7,12 @@ the Clojure CLI) is managed by [mise](https://mise.jdx.dev).
 So far it has registration, login and password management as server-rendered pages. The domain is described in
 [docs/domain.md](docs/domain.md).
 
+The pages are semantic HTML styled by [Pico CSS](https://picocss.com) 2, in its default theme, which follows the
+browser's light or dark preference. [htmx](https://htmx.org) 4 boosts every link and form: it fetches the next page in
+the background and swaps it in, so the browser doesn't reload. Without JavaScript, the pages work as plain HTML. Both
+libraries are Maven dependencies packaged as [WebJars](https://www.webjars.org), served under `/webjars`, so
+`mise run outdated` reports their updates too.
+
 ## Setup
 
 ```bash
@@ -63,6 +69,9 @@ In the REPL, `(start)` also starts GreenMail, an SMTP server inside the JVM, and
 `SMTP_HOST` is set. `(emails)` lists what was sent, newest first, and `(last-link)` returns the link from the newest
 email, ready to open in a browser.
 
+In the REPL, which runs in Pedestal's dev mode, edits to the files in `resources/public/assets` show on the next
+request. Elsewhere they're cached until a restart.
+
 ## Pages
 
 | Path                | |
@@ -76,5 +85,7 @@ email, ready to open in a browser.
 | `/password/reset`   | Where the reset link leads. |
 | `/password/change`  | Change the password while logged in. |
 | `/health`           | `{"status":"ok"}` as JSON. |
+| `/assets/…`         | esopa's stylesheet and scripts. |
+| `/webjars/…`        | htmx and Pico, at paths that include their versions. |
 
 The layout of the source is described in [AGENTS.md](AGENTS.md#layout).
