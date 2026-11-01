@@ -12,11 +12,15 @@
 
 (use-fixtures :once test/disable-routing-table-output-fixture)
 
+(defn- browser-on
+  "A browser on an esopa with the identity `deps`."
+  [deps]
+  (atom {:deps deps :connector (server-test/test-connector deps) :cookies {}}))
+
 (defn- browser
   "A browser on a fresh esopa, or on the same esopa as `other`."
   ([]
-   (let [deps (service-test/test-deps)]
-     (atom {:deps deps :connector (server-test/test-connector deps) :cookies {}})))
+   (browser-on (service-test/test-deps)))
   ([other]
    (atom (assoc (select-keys @other [:deps :connector]) :cookies {}))))
 
@@ -137,7 +141,9 @@
       (testing "and adds no styles of its own"
         (is (str/includes? page "<meta content=\"includeIndicatorCSS:false\" name=\"htmx-config\">")))
       (testing "while a form is being submitted, its button shows it's busy"
-        (is (str/includes? page "<script defer src=\"/assets/show-busy.js\">"))))
+        (is (str/includes? page "<script defer src=\"/assets/show-busy.js\">")))
+      (testing "when esopa can't be reached, the page says so"
+        (is (str/includes? page "<script defer src=\"/assets/show-unreachable.js\">"))))
     (testing "after a swap, focus moves to the new page's heading, which can take focus"
       (is (str/includes? page "<script defer src=\"/assets/move-focus.js\">"))
       (is (str/includes? page "<h1 tabindex=\"-1\">Welcome</h1>")))
@@ -196,6 +202,34 @@
       (is (= 403 (:status (request! b :post "/register" :body (form-encode {:email    "ada@example.com"
                                                                             :password "correct horse"})))))
       (is (empty? (emails b))))))
+
+(deftest form-expired-test
+  (testing "a logged-in visitor whose form has expired stays logged in, and the page's own forms work"
+    (let [b (browser)]
+      (registered! b)
+      (logged-in! b "correct horse")
+      (visit! b "/password/change")
+      (let [response (request! b :post "/password/change"
+                               :body (form-encode {:current-password      "correct horse"
+                                                   :new-password          "new correct horse"
+                                                   :__anti-forgery-token "stale"}))]
+        (is (= 403 (:status response)))
+        (is (str/includes? (:body response) "This form has expired"))
+        (is (str/includes? (:body response) "ada@example.com")))
+      (is (= ["/"] (:redirects (submit! b "/logout" {}))))
+      (is (not (logged-in-as-ada? b))))))
+
+(deftest server-error-test
+  (let [deps (assoc (service-test/test-deps)
+                    :breached? (fn [_] (throw (ex-info "Pwned Passwords unreachable" {}))))
+        b    (browser-on deps)]
+    (visit! b "/register")
+    (let [response (submit! b "/register" {:email "ada@example.com" :password "correct horse"})]
+      (is (= 500 (:status response)))
+      (testing "is a page in the site's layout that says something went wrong, without saying what"
+        (is (str/includes? (:body response) "<h1 tabindex=\"-1\">Something went wrong</h1>"))
+        (is (str/includes? (:body response) "<a href=\"/\">Go to the home page</a>"))
+        (is (not (str/includes? (:body response) "Pwned Passwords unreachable")))))))
 
 (deftest repeated-parameters-test
   (let [b (browser)]

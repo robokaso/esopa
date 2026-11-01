@@ -34,6 +34,7 @@
       (is (= 200 (:status (test/response-for connector :get "/assets/show-password.js"))))
       (is (= 200 (:status (test/response-for connector :get "/assets/move-focus.js"))))
       (is (= 200 (:status (test/response-for connector :get "/assets/show-busy.js"))))
+      (is (= 200 (:status (test/response-for connector :get "/assets/show-unreachable.js"))))
       (is (= 404 (:status (test/response-for connector :get "/assets/missing.js"))))))
   (testing "paths can't climb out of the assets with .. to reach the rest of the class path"
     (let [connector (test-connector)]
@@ -82,6 +83,25 @@
         (is (str/includes? cookie "HttpOnly"))
         (is (str/includes? cookie "Secure"))
         (is (str/includes? cookie "SameSite=Lax"))))))
+
+(deftest not-found-test
+  (let [response (test/response-for (test-connector) :get "/no-such-page")]
+    (is (= 404 (:status response)))
+    (testing "is a page in the site's layout that says what happened and leads on"
+      (is (str/starts-with? (get-in response [:headers "Content-Type"]) "text/html"))
+      (is (str/includes? (:body response) "<h1 tabindex=\"-1\">Page not found</h1>"))
+      (is (str/includes? (:body response) "<a href=\"/\">Go to the home page</a>"))
+      (is (str/includes? (:body response) "<nav>")))))
+
+(deftest form-expired-test
+  (testing "a form posted without a valid anti-forgery token gets a page that explains"
+    (let [response (test/response-for (test-connector) :post "/register"
+                                      :headers {:content-type "application/x-www-form-urlencoded"}
+                                      :body "email=ada%40example.com&password=correct+horse")]
+      (is (= 403 (:status response)))
+      (is (str/starts-with? (get-in response [:headers "Content-Type"]) "text/html"))
+      (is (str/includes? (:body response) "<h1 tabindex=\"-1\">This form has expired</h1>"))
+      (is (str/includes? (:body response) "<a href=\"/\">Go to the home page</a>")))))
 
 (deftest client-ip-test
   (let [request {:remote-addr "10.0.0.2"

@@ -50,12 +50,12 @@
                                                   :trusted-proxies 0
                                                   :identity-deps   deps})
                     (connector/start!))
-        pages     (atom [])]
+        pages     (atom {})]
     (try
       (binding [*esopa* {:base-url (str "http://localhost:" port) :deps deps :pages pages}]
         (f))
       (finally
-        (doseq [{:keys [^BrowserContext context problems]} @pages]
+        (doseq [{:keys [^BrowserContext context problems]} (vals @pages)]
           (is (empty? @problems) "no console errors or warnings, script errors or failed asset requests")
           (.close context))
         (connector/stop! connector)))))
@@ -104,8 +104,15 @@
     (.onConsoleMessage page (consumer #(record! (console-problem %))))
     (.onPageError page (consumer #(record! (str "script error: " %))))
     (.onResponse page (consumer #(record! (asset-problem %))))
-    (swap! pages conj {:context context :problems problems})
+    (swap! pages assoc page {:context context :problems problems})
     page))
+
+(defn take-problems!
+  "The problems `page` has recorded so far, which no longer fail the test. For tests
+  that expect some."
+  [page]
+  (let [problems (get-in @(:pages *esopa*) [page :problems])]
+    (first (reset-vals! problems []))))
 
 (defn path
   "The path of the page `page` shows, like /login."
@@ -171,6 +178,13 @@
   (doseq [[field value] fields]
     (.fill page (str "form[action='" action "'] [name='" (name field) "']") value))
   (click! page (str "form[action='" action "'] button")))
+
+(defn expire-form!
+  "Spoils the anti-forgery token of the form that posts to `action`, as logging in or
+  out in another tab would."
+  [^Page page action]
+  (.evaluate page (str "document.querySelector(\"form[action='" action "'] [name='__anti-forgery-token']\")"
+                       ".value = 'expired'")))
 
 (defn back!
   "Goes back in `page`'s history, and waits for the previous page."

@@ -89,6 +89,43 @@
     (is (= "Log in" (.textContent page "nav a[href='/login']")))
     (is (browser/same-document? page) "from confirming on, nothing was loaded")))
 
+(deftest expired-form-test
+  (let [page (browser/open-page)]
+    (browser/visit page "/register")
+    (browser/submit! page "/register" {:email "ada@example.com" :password password})
+    (browser/visit page (browser/last-link))
+    (browser/click! page "form[action='/confirm'] button")
+    (browser/submit! page "/login" {:email "ada@example.com" :password password})
+    (browser/visit page "/password/change")
+    (browser/mark-document! page)
+    (browser/expire-form! page "/password/change")
+    (browser/submit! page "/password/change" {:current-password password :new-password "new correct horse"})
+    (testing "an expired form gets a page that explains, swapped in like any other"
+      (is (browser/same-document? page))
+      (is (= "This form has expired" (heading page)))
+      (is (browser/focused? page "h1")))
+    (testing "the visitor is still logged in, and the page's own forms work"
+      (is (= "ada@example.com" (.textContent page "nav ul:last-child li:first-child")))
+      (browser/click! page "nav button")
+      (is (= "Log in" (.textContent page "nav a[href='/login']"))))))
+
+(deftest unreachable-test
+  (let [page (browser/open-page)]
+    (browser/visit page "/")
+    (.setOffline (.context page) true)
+    (.click page "nav a[href='/register']")
+    (testing "when esopa can't be reached, the page says so, and the message takes focus"
+      (is (browser/focused? page "#unreachable"))
+      (is (= "esopa couldn't be reached. Check your connection and try again."
+             (.textContent page "#unreachable")))
+      (is (= "/" (browser/path page)))
+      (is (some #(str/includes? % "htmx:error") (browser/take-problems! page))
+          "htmx logs the failed request"))
+    (testing "once it can be reached again, links work"
+      (.setOffline (.context page) false)
+      (browser/click! page "nav a[href='/register']")
+      (is (= "Register" (heading page))))))
+
 (deftest keyboard-test
   (let [page     (browser/open-page)
         keyboard (.keyboard page)]
@@ -149,7 +186,11 @@
     (post "/password/change" {:current-password password :new-password "short"} "change password, with a problem")
     (browser/click! page "nav button")
     (visit "/confirm/resend" "get a new confirmation link")
+    (visit "/no-such-page" "page not found")
     (visit "/password/forgot" "reset your password")
+    (browser/expire-form! page "/password/forgot")
+    (post "/password/forgot" {:email "ada@example.com"} "this form has expired")
+    (browser/visit page "/password/forgot")
     (browser/submit! page "/password/forgot" {:email "ada@example.com"})
     (visit (browser/last-link) "choose a new password")
     (visit "/password/reset?token=garbage" "a link that doesn't work")

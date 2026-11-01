@@ -92,4 +92,8 @@ request. Elsewhere they're cached until a restart.
 | `/assets/…`         | esopa's stylesheet and scripts. |
 | `/webjars/…`        | htmx and Pico, at paths that include their versions. |
 
+Errors have pages in the site's layout too: 404 for an address without a page, 403 for an expired form (a missing
+or stale anti-forgery token) and 500 for a failure, which is logged. When the browser can't reach esopa, the page it's
+on says so.
+
 The layout of the source is described in [AGENTS.md](AGENTS.md#layout).

@@ -3,12 +3,15 @@
   (:require [clojure.string :as str]
             [esopa.domain.identity.account :as account]
             [esopa.identity.web :as identity-web]
+            [esopa.views :as views]
             [io.pedestal.connector :as connector]
             [io.pedestal.environment :as env]
             [io.pedestal.http.csrf :as csrf]
             [io.pedestal.http.jetty :as jetty]
+            [io.pedestal.http.response :as response]
             [io.pedestal.http.ring-middlewares :as ring-middlewares]
             [io.pedestal.interceptor :as interceptor]
+            [io.pedestal.log :as log]
             [io.pedestal.service.interceptors :as interceptors]
             [io.pedestal.service.resources :as resources]
             [ring.middleware.session.cookie :as cookie]))
@@ -60,6 +63,43 @@
                               :route-namespace (str "esopa.server" (str/replace prefix "/" "."))
                               :interceptors    [no-climbing]}))
 
+(defn- html
+  [status body]
+  {:status  status
+   :headers {"Content-Type" "text/html;charset=UTF-8"}
+   :body    body})
+
+(def ^:private not-found-page
+  "Answers a request that nothing else answered with the page that says so. Pedestal's
+  own not-found response is plain text."
+  (interceptor/interceptor
+    {:name  ::not-found-page
+     :leave (fn [context]
+              (if (response/response? (:response context))
+                context
+                (assoc context :response (html 404 (views/not-found (:request context))))))}))
+
+(def ^:private server-error-page
+  "Logs a request that failed with an exception, and answers it with the page that
+  says something went wrong. Pedestal's own response is plain text."
+  (interceptor/interceptor
+    {:name  ::server-error-page
+     :error (fn [{:keys [request] :as context} exception]
+              (log/error :msg "Request failed"
+                         :method (:request-method request)
+                         :uri (:uri request)
+                         :exception exception)
+              (assoc context :response (html 500 (views/server-error request))))}))
+
+(defn- form-expired
+  "Answers a form posted without a valid anti-forgery token with the page that
+  explains. The request keeps the session's current token, so the page's own forms
+  work; without it, Pedestal would also drop the token from the session."
+  [context]
+  (let [{:keys [request] :as context} (assoc-in context [:request csrf/anti-forgery-token]
+                                                (csrf/existing-token (:request context)))]
+    (assoc context :response (html 403 (views/form-expired request)))))
+
 (def ^:private content-security-policy
   "Only scripts, styles and form targets from esopa itself. Images may also be data:
   URIs, which Pico uses for its icons."
@@ -92,10 +132,14 @@
       (connector/with-default-interceptors
         :session-options (session-options config)
         :secure-headers {:content-security-policy-settings content-security-policy})
-      (connector/with-interceptors [(client-ip-interceptor trusted-proxies)
+      ;; The identity interceptor comes before the anti-forgery check, so the page for an
+      ;; expired form still shows who is logged in.
+      (connector/with-interceptors [server-error-page
+                                    (client-ip-interceptor trusted-proxies)
                                     (ring-middlewares/flash)
-                                    (csrf/anti-forgery)
-                                    (identity-web/identity-interceptor identity-deps)])
+                                    (identity-web/identity-interceptor identity-deps)
+                                    (csrf/anti-forgery {:error-handler form-expired})
+                                    not-found-page])
       (connector/with-routes routes
                              identity-web/routes
                              ;; In dev mode, assets are edited while esopa runs; WebJars never change.

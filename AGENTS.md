@@ -163,6 +163,12 @@ JavaScript; htmx and our scripts only improve them.
     `move-focus.js` moves focus to its `h1`, which has `tabindex="-1"` so it can take focus. An `autofocus` element,
     like a problem, takes focus instead.
   - A message shown after a redirect follows the `h1`, so reading on from the heading reaches it.
+- **Errors.** Every error has a page in the site's layout that says what happened and leads on (`esopa.views`):
+  - 404 for an address without a page
+  - 403 for an expired form, meaning a missing or stale anti-forgery token
+  - 500 for a failure, which is logged; the page doesn't say what failed
+
+  When htmx can't reach esopa at all, `show-unreachable.js` says so below the heading and moves focus there.
 - **Perceivable.**
   - Text contrast is at least 4.5:1 (3:1 for large text and for the borders of controls), in light and dark themes.
     Pico's colours meet this; check any colour you add.
@@ -227,9 +233,11 @@ When to use them:
     `main`, whether htmx swapped it in or the browser loaded it. `eventually?` and `focused?` poll for up to two
     seconds. Playwright's `waitForFunction` doesn't work on esopa's pages: the CSP refuses the code it evaluates.
   - `esopa.identity.pages-test` shows the pattern. It covers boosted links and Back, forms with problems, busy buttons,
-    a whole visit from registering to logging out, keyboard-only use and browsing without JavaScript. It also scans
-    every page and state with axe-core, in light and dark themes, and checks phone width. Extend `every-page` when
-    you add a page or a state.
+    expired forms, an unreachable esopa, a whole visit from registering to logging out, keyboard-only use and
+    browsing without JavaScript. It also scans every page and state with axe-core, in light and dark themes, and
+    checks phone width. Extend `every-page` when you add a page or a state.
+  - A test that expects a console problem, like the error htmx logs when esopa can't be reached, takes it with
+    `take-problems!` and asserts on it.
 - **Write generative tests** (`clojure.test.check` with malli generators) when a property states the behaviour more
   clearly than examples do. Good candidates are:
   - aggregate invariants
@@ -307,7 +315,7 @@ Write it yourself only when nothing fits, and keep it small. When you add a depe
 
 ## Security
 
-- Every form posts its anti-forgery token; build forms with the `form` helper in `esopa.identity.views`.
+- Every form posts its anti-forgery token; build forms with the `form` helper in `esopa.views`.
 - Render HTML with Hiccup, which escapes text. Never pass user input to `hiccup2.core/raw`.
 - The Content-Security-Policy only allows esopa's own scripts and styles, so put them in `resources/public/assets`,
   never inline. Images may also be `data:` URIs, which Pico uses for its icons.
@@ -326,7 +334,8 @@ Write it yourself only when nothing fits, and keep it small. When you add a depe
 ```
 src/esopa/main.clj                     -main entry point
 src/esopa/system.clj                   configuration from the environment; start and stop
-src/esopa/server.clj                   Pedestal connector: interceptors, session cookie, security headers, routes
+src/esopa/server.clj                   Pedestal connector: interceptors, session cookie, security headers, error pages, routes
+src/esopa/views.clj                    the site's layout, forms and error pages (Hiccup)
 src/esopa/db.clj                       Datomic connection and the schema of every context
 src/esopa/email.clj                    sending email over SMTP, or to the log without SMTP settings
 src/esopa/webjars.clj                  URLs of the files in WebJars (htmx, Pico)
@@ -334,10 +343,10 @@ src/esopa/domain/identity/account.clj  the Account aggregate: pure rules, schema
 src/esopa/identity/service.clj         identity use cases, with their effects
 src/esopa/identity/db.clj              account schema and queries
 src/esopa/identity/web.clj             identity routes and handlers
-src/esopa/identity/views.clj           identity pages (Hiccup)
+src/esopa/identity/views.clj           identity pages, in the site's layout
 src/esopa/identity/emails.clj          identity emails
 src/esopa/security/                    password hashing, signed tokens, Pwned Passwords, throttling
-resources/public/assets/               stylesheet and scripts (show password, busy buttons, focus after a swap)
+resources/public/assets/               stylesheet and scripts (show password, busy buttons, unreachable, focus after a swap)
 dev/user.clj                           REPL helpers
 test/esopa/                            tests, mirroring src
 browser-test/esopa/                    browser tests (Playwright) and their helpers, esopa.browser
