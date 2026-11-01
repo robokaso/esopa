@@ -1,6 +1,7 @@
 (ns esopa.system
   "Starts and stops the running application: a Datomic connection and an HTTP connector."
   (:require [clojure.java.io :as io]
+            [esopa.access.service :as access-service]
             [esopa.db :as db]
             [esopa.email :as email]
             [esopa.identity.service :as service]
@@ -81,6 +82,17 @@
    :base-url         (:base-url config)
    :counters         (service/new-counters)})
 
+(defn context-deps
+  "The deps of each context's use cases, as :identity-deps and :access-deps, connected:
+  identity announces each new account to access, which gives it its first roles, and
+  access lists accounts from identity. `identity-deps` is what esopa.identity.service
+  needs apart from :account-registered."
+  [identity-deps]
+  (let [access-deps {:conn     (:conn identity-deps)
+                     :accounts #(service/accounts identity-deps)}]
+    {:identity-deps (assoc identity-deps :account-registered #(access-service/account-registered! access-deps %))
+     :access-deps   access-deps}))
+
 (defn start
   "Starts the application. Throws when `config` is invalid."
   [config]
@@ -88,7 +100,7 @@
   (let [conn           (db/connect config)
         email-executor (Executors/newSingleThreadExecutor)
         connector      (server/create-connector
-                         (assoc config :identity-deps (identity-deps config conn email-executor)))]
+                         (merge config (context-deps (identity-deps config conn email-executor))))]
     (connector/start! connector)
     {:config config :conn conn :connector connector :email-executor email-executor}))
 

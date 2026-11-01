@@ -1,5 +1,6 @@
 (ns user
   (:require [clojure.string :as str]
+            [esopa.commands :as commands]
             [esopa.system :as system])
   (:import (com.icegreen.greenmail.util GreenMail ServerSetupTest)
            (jakarta.mail.internet MimeMessage)))
@@ -56,9 +57,16 @@
   []
   (first (:links (first (emails)))))
 
+(defn grant-role!
+  "Gives the account with `email` the role named `role-name`, like \"admin\", in the
+  running system, as the grant-role command does."
+  [email role-name]
+  (:message (commands/grant-role (:conn system) [email role-name])))
+
 (comment
   (start)
   (emails)
   (last-link)
+  (grant-role! "ada@example.com" "admin")
   (stop)
   (restart))

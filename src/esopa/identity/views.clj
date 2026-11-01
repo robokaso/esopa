@@ -15,10 +15,8 @@
    :credentials/invalid    "The email address or password is incorrect."})
 
 (defn- problem
-  "The message for `problem-key`, which screen readers announce and which takes focus."
   [problem-key]
-  (when problem-key
-    [:p#problem {:role "alert" :tabindex "-1" :autofocus true} (problem-messages problem-key)]))
+  (views/problem (problem-messages problem-key)))
 
 (defn- about?
   "Whether the problem `problem-key` is about `topic`. Problem keys are namespaced

@@ -2,6 +2,7 @@
   (:require [clojure.test :refer [deftest is testing]]
             [datomic.client.api :as d]
             [esopa.db :as db]
+            [esopa.db.transaction-test :as transaction-test]
             [esopa.identity.db :as identity-db]))
 
 (defn- fresh-conn
@@ -22,6 +23,9 @@
     (is (= :created (identity-db/create-account! conn ada)))
     (is (= ada (identity-db/account-by-email (d/db conn) "ada@example.com")))
     (is (= ada (identity-db/account-by-id (d/db conn) (:account/id ada))))
+    (testing "registering is the account's own action"
+      (is (= (:account/id ada)
+             (transaction-test/actor-of (d/db conn) [:account/id (:account/id ada)] :account/email))))
     (testing "unknown accounts are nil"
       (is (nil? (identity-db/account-by-email (d/db conn) "eve@example.com")))
       (is (nil? (identity-db/account-by-id (d/db conn) (random-uuid)))))))
@@ -44,6 +48,20 @@
         ada  (account "ada@example.com")
         at   #inst "2026-01-02T10:00:00.000-00:00"]
     (identity-db/create-account! conn ada)
-    (identity-db/save! conn {:account/id (:account/id ada) :account/confirmed-at at})
+    (identity-db/save! conn (:account/id ada) {:account/id (:account/id ada) :account/confirmed-at at})
     (is (= (assoc ada :account/confirmed-at at)
-           (identity-db/account-by-id (d/db conn) (:account/id ada))))))
+           (identity-db/account-by-id (d/db conn) (:account/id ada))))
+    (testing "records whose action the change is"
+      (is (= (:account/id ada)
+             (transaction-test/actor-of (d/db conn) [:account/id (:account/id ada)] :account/confirmed-at))))))
+
+(deftest accounts-test
+  (let [conn (fresh-conn)
+        eve  (account "eve@example.com")
+        ada  (assoc (account "ada@example.com") :account/confirmed-at #inst "2026-01-02T10:00:00.000-00:00")]
+    (is (= [] (identity-db/accounts (d/db conn))))
+    (identity-db/create-account! conn eve)
+    (identity-db/create-account! conn ada)
+    (testing "every account, by email address, without its password hash"
+      (is (= [(dissoc ada :account/password-hash) (dissoc eve :account/password-hash)]
+             (identity-db/accounts (d/db conn)))))))

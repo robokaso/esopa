@@ -5,8 +5,10 @@
   with-esopa fails the test on any of them."
   (:require [clojure.string :as str]
             [clojure.test :refer [is]]
+            [esopa.commands :as commands]
             [esopa.identity.service-test :as service-test]
             [esopa.server :as server]
+            [esopa.server-test :as server-test]
             [io.pedestal.connector :as connector])
   (:import (com.deque.html.axecore.playwright AxeBuilder)
            (com.deque.html.axecore.results Node Rule)
@@ -43,12 +45,7 @@
   [f]
   (let [port      (free-port)
         deps      (service-test/test-deps)
-        connector (doto (server/create-connector {:host            "localhost"
-                                                  :port            port
-                                                  :session-key     (byte-array (range 16))
-                                                  :cookie-secure?  false
-                                                  :trusted-proxies 0
-                                                  :identity-deps   deps})
+        connector (doto (server/create-connector (server-test/connector-config deps :port port :cookie-secure? false))
                     (connector/start!))
         pages     (atom {})]
     (try
@@ -212,6 +209,11 @@
   "Whether `page` shows without scrolling sideways."
   [^Page page]
   (= true (.evaluate page "document.documentElement.scrollWidth <= window.innerWidth")))
+
+(defn grant-role!
+  "Gives the account with `email` the role named `role-name`, as the grant-role command does."
+  [email role-name]
+  (commands/grant-role (:conn (:deps *esopa*)) [email role-name]))
 
 (defn last-link
   "The path of the link in the last email esopa sent."

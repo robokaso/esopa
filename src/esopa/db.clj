@@ -1,11 +1,13 @@
 (ns esopa.db
   "Datomic access via the Client API, backed by Datomic Local."
   (:require [datomic.client.api :as d]
+            [esopa.access.db :as access-db]
+            [esopa.db.transaction :as transaction]
             [esopa.identity.db :as identity-db]))
 
 (def schema
-  "The schema of every bounded context."
-  identity-db/schema)
+  "The schema of every bounded context, and of the transactions themselves."
+  (concat transaction/schema identity-db/schema access-db/schema))
 
 (defn connect
   "Returns a connection to the database named `db-name`, creating it and installing

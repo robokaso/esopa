@@ -4,14 +4,15 @@
 
   `deps` holds:
 
-  :conn              Datomic connection
-  :password-options  argon2id settings (see esopa.security.password)
-  :token-key         byte array that signs the links in emails
-  :send-email        function of an email map
-  :breached?         function of a password; true when it appears in a breach
-  :now               function returning the current time
-  :base-url          where esopa is served, for the links in emails
-  :counters          atoms of throttle counters, from new-counters"
+  :conn                Datomic connection
+  :password-options    argon2id settings (see esopa.security.password)
+  :token-key           byte array that signs the links in emails
+  :send-email          function of an email map
+  :account-registered  function of the :account/id of each new account, called once it's stored
+  :breached?           function of a password; true when it appears in a breach
+  :now                 function returning the current time
+  :base-url            where esopa is served, for the links in emails
+  :counters            atoms of throttle counters, from new-counters"
   (:require [datomic.client.api :as d]
             [esopa.domain.identity.account :as account]
             [esopa.identity.db :as identity-db]
@@ -110,7 +111,8 @@
       (let [new-account (account/register {:email email :password-hash (hash-password deps password)}
                                           {:id (random-uuid) :now (now deps)})]
         (case (identity-db/create-account! (:conn deps) new-account)
-          :created     (send-confirmation! deps new-account)
+          :created     (do ((:account-registered deps) (:account/id new-account))
+                           (send-confirmation! deps new-account))
           :email-taken (send-already-registered! deps email))
         {:outcome :registered}))))
 
@@ -118,7 +120,8 @@
   "Confirms the email address the confirmation link `token` was sent to."
   [deps token]
   (if-let [link-account (link-account deps :confirm-email token)]
-    (do (some->> (account/confirm link-account (now deps)) (identity-db/save! (:conn deps)))
+    (do (some->> (account/confirm link-account (now deps))
+                 (identity-db/save! (:conn deps) (:account/id link-account)))
         {:outcome :confirmed})
     {:outcome :invalid-link}))
 
@@ -170,7 +173,7 @@
 (defn log-out-everywhere!
   "Ends every session of `account`."
   [deps account]
-  (identity-db/save! (:conn deps) (account/log-out-everywhere account))
+  (identity-db/save! (:conn deps) (:account/id account) (account/log-out-everywhere account))
   {:outcome :logged-out-everywhere})
 
 (defn request-password-reset!
@@ -193,8 +196,10 @@
   (if-let [account (link-account deps :reset-password token)]
     (if-let [problem (new-password-problem deps (:account/email account) password)]
       {:outcome :invalid :problem problem}
-      (do (identity-db/save! (:conn deps) (account/reset-password account {:new-password-hash (hash-password deps password)
-                                                                           :now               (now deps)}))
+      (do (identity-db/save! (:conn deps)
+                             (:account/id account)
+                             (account/reset-password account {:new-password-hash (hash-password deps password)
+                                                              :now               (now deps)}))
           {:outcome :password-reset}))
     {:outcome :invalid-link}))
 
@@ -210,5 +215,10 @@
           result         (account/change-password account {:current-password-valid? current-valid?
                                                            :new-password-hash       (hash-password deps new-password)
                                                            :now                     (now deps)})]
-      (some->> (:changes result) (identity-db/save! (:conn deps)))
+      (some->> (:changes result) (identity-db/save! (:conn deps) (:account/id account)))
       (dissoc result :changes))))
+
+(defn accounts
+  "Every account, ordered by email address, without its password hash."
+  [deps]
+  (identity-db/accounts (d/db (:conn deps))))

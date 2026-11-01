@@ -3,6 +3,7 @@
             [clojure.test :refer [deftest is testing]]
             [datomic.client.api :as d]
             [esopa.db :as db]
+            [esopa.db.transaction-test :as transaction-test]
             [esopa.domain.identity.account :as account]
             [esopa.identity.db :as identity-db]
             [esopa.identity.service :as service]))
@@ -11,21 +12,24 @@
 
 (defn test-deps
   "Dependencies for the identity use cases, backed by a fresh in-memory database.
-  Sent emails collect in ::outbox, ::clock is the current time and
-  \"password123\" is the only breached password."
+  Sent emails collect in ::outbox, the ids of registered accounts in ::registered,
+  ::clock is the current time and \"password123\" is the only breached password."
   []
-  (let [outbox (atom [])
-        clock  (atom start)]
-    {:conn             (db/connect {:storage-dir :mem :db-name (str (random-uuid))})
-     :password-options {:alg :argon2id :memory 8 :iterations 1}
-     :token-key        (byte-array (range 32))
-     :send-email       #(swap! outbox conj %)
-     :breached?        #(= "password123" %)
-     :now              #(deref clock)
-     :base-url         "http://esopa.test"
-     :counters         (service/new-counters)
-     ::outbox          outbox
-     ::clock           clock}))
+  (let [outbox     (atom [])
+        registered (atom [])
+        clock      (atom start)]
+    {:conn               (db/connect {:storage-dir :mem :db-name (str (random-uuid))})
+     :password-options   {:alg :argon2id :memory 8 :iterations 1}
+     :token-key          (byte-array (range 32))
+     :send-email         #(swap! outbox conj %)
+     :account-registered #(swap! registered conj %)
+     :breached?          #(= "password123" %)
+     :now                #(deref clock)
+     :base-url           "http://esopa.test"
+     :counters           (service/new-counters)
+     ::outbox            outbox
+     ::registered        registered
+     ::clock             clock}))
 
 (defn- advance!
   [deps duration]
@@ -62,7 +66,9 @@
     (testing "stores an unconfirmed account under the normalized address"
       (let [ada (account-for deps "ada@example.com")]
         (is (some? ada))
-        (is (not (account/confirmed? ada)))))
+        (is (not (account/confirmed? ada)))
+        (testing "and announces it"
+          (is (= [(:account/id ada)] @(::registered deps))))))
     (testing "emails a confirmation link"
       (let [[email] (sent deps)]
         (is (= 1 (count (sent deps))))
@@ -101,7 +107,34 @@
         (is (str/includes? (:body email) "http://esopa.test/password/forgot"))
         (is (not (str/includes? (:body email) "token=")))))
     (testing "leaves the account alone"
-      (is (= ada (account-for deps "ada@example.com"))))))
+      (is (= ada (account-for deps "ada@example.com")))
+      (is (= [(:account/id ada)] @(::registered deps)) "announced once, when it was registered"))))
+
+(deftest changes-are-the-accounts-own-actions-test
+  (let [deps     (test-deps)
+        ada      (registered! deps)
+        actor-of #(transaction-test/actor-of (d/db (:conn deps)) [:account/id (:account/id ada)] %)]
+    (is (= (:account/id ada) (actor-of :account/email)) "registering")
+    (is (= (:account/id ada) (actor-of :account/confirmed-at)) "confirming")
+    (service/log-out-everywhere! deps ada)
+    (is (= (:account/id ada) (actor-of :account/session-version)) "logging out everywhere")
+    (service/change-password! deps (account-for deps "ada@example.com")
+                              {:current-password "correct horse" :new-password "new correct horse"})
+    (is (= (:account/id ada) (actor-of :account/password-hash)) "changing the password")
+    (let [before (d/db (:conn deps))]
+      (service/request-password-reset! deps "ada@example.com")
+      (service/reset-password! deps {:token (token-in (last (sent deps))) :password "third correct horse"})
+      (is (not= before (d/db (:conn deps))))
+      (is (= (:account/id ada) (actor-of :account/password-hash)) "resetting the password"))))
+
+(deftest accounts-test
+  (let [deps (test-deps)
+        ada  (registered! deps)]
+    (service/register! deps {:email "eve@example.com" :password "correct horse"})
+    (testing "every account, by email address, without its password hash"
+      (is (= [(dissoc ada :account/password-hash)
+              (dissoc (account-for deps "eve@example.com") :account/password-hash)]
+             (service/accounts deps))))))
 
 (deftest confirm-test
   (let [deps (test-deps)]

@@ -1,6 +1,7 @@
 (ns esopa.identity.db
   "Datomic storage for accounts."
-  (:require [datomic.client.api :as d])
+  (:require [datomic.client.api :as d]
+            [esopa.db.transaction :as transaction])
   (:import (clojure.lang ExceptionInfo)))
 
 (def schema
@@ -39,6 +40,9 @@
    :account/confirmed-at
    :account/session-version])
 
+(def ^:private listing-pattern
+  (vec (remove #{:account/password-hash} pattern)))
+
 (defn- account-by
   [db attribute value]
   (ffirst (d/q '[:find (pull ?e pattern)
@@ -57,11 +61,11 @@
   (account-by db :account/id id))
 
 (defn create-account!
-  "Stores a new account. Returns :created, or :email-taken when another account
-  has its email address."
+  "Stores a new account, as its own action. Returns :created, or :email-taken when
+  another account has its email address."
   [conn account]
   (try
-    (d/transact conn {:tx-data [account]})
+    (transaction/transact! conn (:account/id account) [account])
     :created
     (catch ExceptionInfo e
       (if (= :db.error/unique-conflict (:db/error (ex-data e)))
@@ -69,6 +73,18 @@
         (throw e)))))
 
 (defn save!
-  "Stores `changes`, a map of the attributes that change, with the :account/id."
-  [conn changes]
-  (d/transact conn {:tx-data [changes]}))
+  "Stores `changes`, a map of the attributes that change, with the :account/id, as
+  the action of the account with the id `actor`."
+  [conn actor changes]
+  (transaction/transact! conn actor [changes]))
+
+(defn accounts
+  "Every account, ordered by email address, without its password hash."
+  [db]
+  (->> (d/q '[:find (pull ?e pattern)
+              :in $ pattern
+              :where [?e :account/id]]
+            db listing-pattern)
+       (map first)
+       (sort-by :account/email)
+       vec))

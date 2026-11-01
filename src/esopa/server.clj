@@ -1,14 +1,17 @@
 (ns esopa.server
   "HTTP routes and the Pedestal connector."
   (:require [clojure.string :as str]
+            [esopa.access.web :as access-web]
             [esopa.domain.identity.account :as account]
             [esopa.identity.web :as identity-web]
             [esopa.views :as views]
+            [esopa.web :as web]
             [io.pedestal.connector :as connector]
             [io.pedestal.environment :as env]
             [io.pedestal.http.csrf :as csrf]
             [io.pedestal.http.jetty :as jetty]
             [io.pedestal.http.response :as response]
+            [io.pedestal.http.route :as route]
             [io.pedestal.http.ring-middlewares :as ring-middlewares]
             [io.pedestal.interceptor :as interceptor]
             [io.pedestal.log :as log]
@@ -21,8 +24,8 @@
   {:status 200
    :body   {:status "ok"}})
 
-(def routes
-  #{["/health" :get [interceptors/json-body health] :route-name ::health]})
+(def ^:private health-routes
+  #{["/health" :get [web/public interceptors/json-body health] :route-name ::health]})
 
 (defn client-ip
   "The client's IP address. Behind `trusted-proxies` proxies, each appending the
@@ -61,13 +64,7 @@
                               :prefix          prefix
                               :cache?          cache?
                               :route-namespace (str "esopa.server" (str/replace prefix "/" "."))
-                              :interceptors    [no-climbing]}))
-
-(defn- html
-  [status body]
-  {:status  status
-   :headers {"Content-Type" "text/html;charset=UTF-8"}
-   :body    body})
+                              :interceptors    [web/public no-climbing]}))
 
 (def ^:private not-found-page
   "Answers a request that nothing else answered with the page that says so. Pedestal's
@@ -77,7 +74,7 @@
      :leave (fn [context]
               (if (response/response? (:response context))
                 context
-                (assoc context :response (html 404 (views/not-found (:request context))))))}))
+                (assoc context :response (web/html 404 (views/not-found (:request context))))))}))
 
 (def ^:private server-error-page
   "Logs a request that failed with an exception, and answers it with the page that
@@ -89,7 +86,7 @@
                          :method (:request-method request)
                          :uri (:uri request)
                          :exception exception)
-              (assoc context :response (html 500 (views/server-error request))))}))
+              (assoc context :response (web/html 500 (views/server-error request))))}))
 
 (defn- form-expired
   "Answers a form posted without a valid anti-forgery token with the page that
@@ -98,7 +95,7 @@
   [context]
   (let [{:keys [request] :as context} (assoc-in context [:request csrf/anti-forgery-token]
                                                 (csrf/existing-token (:request context)))]
-    (assoc context :response (html 403 (views/form-expired request)))))
+    (assoc context :response (web/html 403 (views/form-expired request)))))
 
 (def ^:private content-security-policy
   "Only scripts, styles and form targets from esopa itself. Images may also be data:
@@ -122,27 +119,45 @@
                   :path      "/"
                   :max-age   (.toSeconds account/session-lifetime)}})
 
+(defn routes
+  "Every route esopa answers, expanded. Each starts with esopa.web's public, logged-in
+  or permitted, saying who may use it."
+  []
+  (route/expand-routes health-routes
+                       identity-web/routes
+                       access-web/routes
+                       ;; In dev mode, assets are edited while esopa runs; WebJars never change.
+                       (resource-routes "public/assets" "/assets" (not env/dev-mode?))
+                       (resource-routes "META-INF/resources/webjars" "/webjars" true)))
+
+(defn- with-router
+  "Adds a router for (routes) to `connector-map`, as connector/with-routes does. In dev
+  mode it asks for the routes on every request, so redefined routes take effect at once."
+  [connector-map]
+  (connector/with-interceptors connector-map
+                               [(route/router (if env/dev-mode? (fn [] (routes)) (routes))
+                                              (:router connector-map))
+                                route/path-params-decoder]))
+
 (defn create-connector
-  "Returns an unstarted Jetty connector. `identity-deps` are the dependencies of
-  the identity use cases (see esopa.identity.service); `trusted-proxies` is the
-  number of proxies in front of esopa (see client-ip)."
-  [{:keys! [host port trusted-proxies identity-deps] :as config}]
+  "Returns an unstarted Jetty connector. `identity-deps` and `access-deps` are the
+  dependencies of each context's use cases (see esopa.identity.service and
+  esopa.access.service); `trusted-proxies` is the number of proxies in front of esopa
+  (see client-ip)."
+  [{:keys! [host port trusted-proxies identity-deps access-deps] :as config}]
   (-> (connector/default-connector-map host port)
       (connector/optionally-with-dev-mode-interceptors)
       (connector/with-default-interceptors
         :session-options (session-options config)
         :secure-headers {:content-security-policy-settings content-security-policy})
-      ;; The identity interceptor comes before the anti-forgery check, so the page for an
-      ;; expired form still shows who is logged in.
+      ;; The account and its roles come before the anti-forgery check, so the page for an
+      ;; expired form still shows who is logged in and what they may use.
       (connector/with-interceptors [server-error-page
                                     (client-ip-interceptor trusted-proxies)
                                     (ring-middlewares/flash)
                                     (identity-web/identity-interceptor identity-deps)
+                                    (access-web/roles-interceptor access-deps)
                                     (csrf/anti-forgery {:error-handler form-expired})
                                     not-found-page])
-      (connector/with-routes routes
-                             identity-web/routes
-                             ;; In dev mode, assets are edited while esopa runs; WebJars never change.
-                             (resource-routes "public/assets" "/assets" (not env/dev-mode?))
-                             (resource-routes "META-INF/resources/webjars" "/webjars" true))
+      (with-router)
       (jetty/create-connector nil)))

@@ -4,7 +4,7 @@ Clojure 1.13 (alpha) web application using the Clojure CLI, [Pedestal](http://pe
 [Datomic Local](https://docs.datomic.com/datomic-local.html) via the Datomic Client API. Tooling (Temurin JDK 25 and
 the Clojure CLI) is managed by [mise](https://mise.jdx.dev).
 
-So far it has registration, login and password management as server-rendered pages. The domain is described in
+So far it has registration, login, password management and roles as server-rendered pages. The domain is described in
 [docs/domain.md](docs/domain.md).
 
 The pages are semantic HTML styled by [Pico CSS](https://picocss.com) 2, in its default theme, which follows the
@@ -76,6 +76,22 @@ email, ready to open in a browser.
 In the REPL, which runs in Pedestal's dev mode, edits to the files in `resources/public/assets` show on the next
 request. Elsewhere they're cached until a restart.
 
+## Roles
+
+Features are gated by permissions, and roles group permissions: admins may assign roles, and every new account is a
+member. The details are in [docs/domain.md](docs/domain.md).
+
+The first admin is made with a command, run while esopa is stopped, because Datomic Local serves one process at a
+time:
+
+```bash
+java --sun-misc-unsafe-memory-access=allow -jar target/esopa.jar grant-role ada@example.com admin
+```
+
+Locally, stop `mise run run` and use `clojure -M:run grant-role ada@example.com admin`. In the REPL,
+`(grant-role! "ada@example.com" "admin")` works on the running system. After that, admins change roles at
+`/admin/accounts`.
+
 ## Pages
 
 | Path                | |
@@ -88,6 +104,7 @@ request. Elsewhere they're cached until a restart.
 | `/password/forgot`  | Ask for a password reset link. |
 | `/password/reset`   | Where the reset link leads. |
 | `/password/change`  | Change the password while logged in. |
+| `/admin/accounts`   | Every account with its roles, which admins change here. |
 | `/health`           | `{"status":"ok"}` as JSON. |
 | `/assets/…`         | esopa's stylesheet and scripts. |
 | `/webjars/…`        | htmx and Pico, at paths that include their versions. |

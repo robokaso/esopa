@@ -33,6 +33,7 @@ dependencies needs `--sun-misc-unsafe-memory-access=allow` in `:jvm-opts`. Witho
 | `clojure -M:mutate src/esopa/<file>.clj --scan`  | Count a file's mutation sites without running tests.                          |
 | `mise run dev`                                   | nREPL in Pedestal dev mode. Use `(start)`, `(stop)`, `(restart)` in `user`; `(emails)` and `(last-link)` show what was sent. |
 | `mise run run`, `mise run uberjar`               | Run the server; build `target/esopa.jar`.                                     |
+| `clojure -M:run grant-role EMAIL ROLE`           | Give an account a role, like admin, while the server is stopped. In the REPL: `(grant-role! "EMAIL" "admin")`. |
 | `mise run outdated`                              | Report updates for `deps.edn`, GitHub Actions and mise tools, with the command that applies each. |
 
 Dependency updates are manual; nothing opens update pull requests. Run `mise run outdated` regularly and apply updates
@@ -130,6 +131,25 @@ The core domain is why this service exists. Model it with the most care and keep
   is still to be modelled. Its rules are in `esopa.domain.identity.account`. `esopa.identity.service` runs its use
   cases and is the pattern for new ones: each takes a `deps` map holding the connection and every effect it needs
   (clock, email, external checks), so tests can substitute them.
+- **Contexts talk through `deps` functions**, wired in `esopa.system/context-deps`. Identity calls
+  `:account-registered` for each new account; access calls `:accounts` to list them.
+- **The access context** decides who may do what (see `docs/domain.md`). To gate a feature:
+  1. Declare the permission it needs in `esopa.domain.access.roles/permissions`, namespaced by its context, like
+     `:booking/cancel`, and grant it to roles in `roles`. Features check permissions, never roles.
+  2. Start its routes with `(web/permitted :booking/cancel)` from `esopa.web`. Every route starts with `web/public`,
+     `web/logged-in` or `web/permitted`, and `esopa.server-test` fails on one that doesn't.
+  3. Check again in the use case, which takes the acting account (`:account/id` and `:access/roles`) and answers
+     `:forbidden`, so no other way in skips the check. Rules about one particular thing belong in its aggregate.
+  4. Show links and buttons only to accounts whose `:roles`, on the request, grant the permission.
+
+## Datomic
+
+- Write through `esopa.db.transaction/transact!` with the acting account's `:account/id`, or nil for changes made
+  outside esopa's pages. It records the account as the transaction's `:transaction/actor`, so Datomic's history tells
+  who changed what.
+- Each context owns the attributes in its own namespace, like `:account/*` and `:access/*`, even on a shared entity,
+  and refers to an account by `:account/id`.
+- `esopa.db` gathers every context's schema, which `connect` installs.
 
 ## Semantic, accessible HTML
 
@@ -153,7 +173,8 @@ JavaScript; htmx and our scripts only improve them.
   - Every field has a visible label and the `autocomplete` hint that fits it.
   - Help text sits below its field, linked with `aria-describedby`.
   - A problem is described in text. It's announced with `role="alert"` and takes focus with `autofocus`. The field it's
-    about gets `aria-invalid="true"` and is described by it. `field` in `esopa.identity.views` does this.
+    about gets `aria-invalid="true"` and is described by it. `esopa.views/problem` renders the problem, and `field` in
+    `esopa.identity.views` marks the field.
   - A form shown again keeps what was typed, except passwords.
   - While htmx submits a form, its button is marked `aria-busy` (`show-busy.js`).
 - **Keyboard and focus.**
@@ -166,6 +187,7 @@ JavaScript; htmx and our scripts only improve them.
 - **Errors.** Every error has a page in the site's layout that says what happened and leads on (`esopa.views`):
   - 404 for an address without a page
   - 403 for an expired form, meaning a missing or stale anti-forgery token
+  - 403 for a page the account's roles don't allow
   - 500 for a failure, which is logged; the page doesn't say what failed
 
   When htmx can't reach esopa at all, `show-unreachable.js` says so below the heading and moves focus there.
@@ -219,8 +241,9 @@ When to use them:
   `malli.generator` instead of building fixtures by hand.
 - **Keep the fast suite fast.** Don't use sleeps, network ports or external services. The one exception is a server
   running inside the test JVM on a random local port, like GreenMail, the SMTP server in `esopa.email-test`.
-  - HTTP tests call the connector with `io.pedestal.connector.test/response-for`. `esopa.identity.web-test` drives
-    pages like a browser: it keeps cookies, follows redirects and submits forms with their anti-forgery token.
+  - HTTP tests call the connector with `io.pedestal.connector.test/response-for`. `esopa.http-browser` drives pages
+    like a browser: it keeps cookies, follows redirects and submits forms with their anti-forgery token.
+    `esopa.server-test/test-connector` connects the contexts as `esopa.system` does.
   - Database tests use in-memory Datomic (`:storage-dir :mem`) with a fresh `db-name` per test; see `test-deps` in
     `esopa.identity.service-test`, which also fixes the clock and collects sent emails.
 - **Browser tests** live in `browser-test/` and run with `mise run test:browser`, which installs Playwright's headless
@@ -316,6 +339,7 @@ Write it yourself only when nothing fits, and keep it small. When you add a depe
 ## Security
 
 - Every form posts its anti-forgery token; build forms with the `form` helper in `esopa.views`.
+- Every route says who may use it, and use cases check permissions too (see the access context above).
 - Render HTML with Hiccup, which escapes text. Never pass user input to `hiccup2.core/raw`.
 - The Content-Security-Policy only allows esopa's own scripts and styles, so put them in `resources/public/assets`,
   never inline. Images may also be `data:` URIs, which Pico uses for its icons.
@@ -334,9 +358,12 @@ Write it yourself only when nothing fits, and keep it small. When you add a depe
 ```
 src/esopa/main.clj                     -main entry point
 src/esopa/system.clj                   configuration from the environment; start and stop
+src/esopa/commands.clj                 commands run with the jar while esopa is stopped: grant-role
 src/esopa/server.clj                   Pedestal connector: interceptors, session cookie, security headers, error pages, routes
+src/esopa/web.clj                      what every context's handlers share: responses, parameters, route access
 src/esopa/views.clj                    the site's layout, forms and error pages (Hiccup)
 src/esopa/db.clj                       Datomic connection and the schema of every context
+src/esopa/db/transaction.clj           transactions that record the acting account
 src/esopa/email.clj                    sending email over SMTP, or to the log without SMTP settings
 src/esopa/webjars.clj                  URLs of the files in WebJars (htmx, Pico)
 src/esopa/domain/identity/account.clj  the Account aggregate: pure rules, schemas and limits
@@ -345,10 +372,15 @@ src/esopa/identity/db.clj              account schema and queries
 src/esopa/identity/web.clj             identity routes and handlers
 src/esopa/identity/views.clj           identity pages, in the site's layout
 src/esopa/identity/emails.clj          identity emails
+src/esopa/domain/access/roles.clj      permissions, roles and their rules
+src/esopa/access/service.clj           access use cases, with their effects
+src/esopa/access/db.clj                the roles of accounts in Datomic
+src/esopa/access/web.clj               the accounts page; the roles of the logged-in account on each request
+src/esopa/access/views.clj             the accounts page (Hiccup)
 src/esopa/security/                    password hashing, signed tokens, Pwned Passwords, throttling
 resources/public/assets/               stylesheet and scripts (show password, busy buttons, unreachable, focus after a swap)
 dev/user.clj                           REPL helpers
-test/esopa/                            tests, mirroring src
+test/esopa/                            tests, mirroring src; esopa.http-browser drives pages
 browser-test/esopa/                    browser tests (Playwright) and their helpers, esopa.browser
 docs/domain.md                         the domain: glossary, contexts, aggregates, rules
 tests.edn                              Kaocha suites (:unit, :generative, :browser) and Cloverage options

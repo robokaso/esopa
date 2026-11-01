@@ -9,6 +9,9 @@
 main form { margin-bottom: var(--pico-typography-spacing-vertical); }
 nav form { margin-bottom: 0; }
 
+/* On a narrow screen, the navigation's items wrap onto more lines instead of running off it. */
+nav, nav ul { flex-wrap: wrap; }
+
 [role=status] {
   padding: var(--pico-spacing);
   border-inline-start: 0.25rem solid var(--pico-ins-color);

@@ -4,23 +4,33 @@
             [clojure.test :refer [deftest is testing use-fixtures]]
             [esopa.identity.service-test :as service-test]
             [esopa.server :as server]
+            [esopa.system :as system]
+            [esopa.web :as web]
             [esopa.webjars :as webjars]
             [io.pedestal.connector.test :as test]
             [io.pedestal.environment :as env]))
 
 (use-fixtures :once test/disable-routing-table-output-fixture)
 
+(defn connector-config
+  "The configuration of a connector on the identity use cases' `deps` (see
+  service-test/test-deps), connected to the other contexts as esopa.system connects
+  them, with `overrides`."
+  [deps & {:as overrides}]
+  (merge {:host            "localhost"
+          :port            0
+          :session-key     (byte-array (range 16))
+          :cookie-secure?  true
+          :trusted-proxies 0}
+         (system/context-deps deps)
+         overrides))
+
 (defn test-connector
   "A connector backed by a fresh in-memory database; see service-test/test-deps."
   ([]
    (test-connector (service-test/test-deps)))
   ([deps]
-   (server/create-connector {:host           "localhost"
-                             :port           0
-                             :session-key    (byte-array (range 16))
-                             :cookie-secure? true
-                             :trusted-proxies 0
-                             :identity-deps  deps})))
+   (server/create-connector (connector-config deps))))
 
 (deftest health-test
   (let [response (test/response-for (test-connector) :get "/health")]
@@ -83,6 +93,13 @@
         (is (str/includes? cookie "HttpOnly"))
         (is (str/includes? cookie "Secure"))
         (is (str/includes? cookie "SameSite=Lax"))))))
+
+(deftest every-route-says-who-may-use-it-test
+  (let [routes (:routes (server/routes))]
+    (is (< 10 (count routes)))
+    (doseq [{:keys [route-name interceptors]} routes]
+      (is (#{::web/public ::web/logged-in ::web/permitted} (:name (first interceptors)))
+          (str route-name " starts with esopa.web's public, logged-in or permitted")))))
 
 (deftest not-found-test
   (let [response (test/response-for (test-connector) :get "/no-such-page")]
