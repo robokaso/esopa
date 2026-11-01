@@ -1,0 +1,39 @@
+{:paths ["src" "resources"]
+
+ :deps {org.clojure/clojure            {:mvn/version "1.13.0-alpha11"}
+        io.pedestal/pedestal.service   {:mvn/version "0.8.2"}
+        io.pedestal/pedestal.jetty     {:mvn/version "0.8.2"}
+        com.datomic/local              {:mvn/version "1.0.301"}
+        ch.qos.logback/logback-classic {:mvn/version "1.6.6"}}
+
+ :aliases
+ {;; clojure -M:run
+  ;; Datomic's Caffeine dependency uses sun.misc.Unsafe, which JDK 25 warns about.
+  :run {:jvm-opts  ["--sun-misc-unsafe-memory-access=allow"]
+        :main-opts ["-m" "esopa.main"]}
+
+  ;; REPL tooling; dev mode enables Pedestal's live route reloading and dev interceptors
+  :dev {:extra-paths ["dev"]
+        :jvm-opts    ["--sun-misc-unsafe-memory-access=allow"
+                      "-Dio.pedestal.dev-mode=true"]}
+
+  ;; clojure -M:dev:test:nrepl
+  :nrepl {:extra-deps {nrepl/nrepl       {:mvn/version "1.8.0"}
+                       cider/cider-nrepl {:mvn/version "0.64.0"}}
+          :main-opts  ["-m" "nrepl.cmdline"
+                       "--middleware" "[cider.nrepl/cider-middleware]"
+                       "--interactive"]}
+
+  ;; clojure -X:test
+  :test {:extra-paths ["test"]
+         :extra-deps  {io.github.cognitect-labs/test-runner {:git/tag "v0.5.1" :git/sha "dfb30dd"}}
+         :jvm-opts    ["--sun-misc-unsafe-memory-access=allow"]
+         :exec-fn     cognitect.test-runner.api/test}
+
+  ;; clojure -T:build uber
+  :build {:deps       {io.github.clojure/tools.build {:mvn/version "0.10.14"}}
+          :ns-default build}
+
+  ;; clojure -T:antq outdated
+  :antq {:deps       {com.github.liquidz/antq {:mvn/version "2.11.1276"}}
+         :ns-default antq.core}}}

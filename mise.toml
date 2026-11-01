@@ -1,0 +1,23 @@
+[tools]
+java = "temurin-25"
+clojure = "1.12.6.1673"
+
+[tasks.dev]
+description = "Start an nREPL-enabled development REPL"
+run = "clojure -M:dev:test:nrepl"
+
+[tasks.run]
+description = "Run the web server"
+run = "clojure -M:run"
+
+[tasks.test]
+description = "Run the test suite"
+run = "clojure -X:test"
+
+[tasks.outdated]
+description = "List outdated dependencies"
+run = "clojure -T:antq outdated"
+
+[tasks.uberjar]
+description = "Build target/esopa.jar"
+run = "clojure -T:build uber"
